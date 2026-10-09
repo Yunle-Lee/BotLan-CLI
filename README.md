@@ -1,5 +1,7 @@
 # Spark Duo — Jev gate + StepFun VLM on the DGX Spark
 
+**English** | [中文](README.zh.md)
+
 A two-stage fast-answer system that keeps **both** models resident in the GB10's coherent
 unified memory: a 0.53 GB decision model decides what to do, a 4B vision-language model answers.
 
