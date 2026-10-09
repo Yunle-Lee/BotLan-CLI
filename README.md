@@ -24,6 +24,8 @@ request (state up to 25,600 tokens, optionally an image)
    │
    └─ stage 3 · optional Jev NLI check: is the answer contradicted by the context?
 ```
+<img width="1057" height="892" alt="image" src="https://github.com/user-attachments/assets/298b33d4-f08d-4dc4-a831-bdd4b19c78c7" />
+
 
 ## The whole tree
 
