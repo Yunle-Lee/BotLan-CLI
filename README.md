@@ -1,4 +1,4 @@
-# Spark Duo — Jev gate + StepFun VLM on the DGX Spark
+# Jev-Step — Jev gate + StepFun VLM on the DGX Spark
 
 **English** | [中文](README.zh.md)
 
