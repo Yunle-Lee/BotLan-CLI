@@ -140,6 +140,42 @@ eval/                        routing + agent eval cases and runners
 benchmarks/                  measured data: single-stream and concurrency (REPORT.md, raw.json, summary.json)
 ```
 
+## Requirements
+
+| component | version / path on this box | used by |
+|---|---|---|
+| NVIDIA GB10 (DGX Spark) — sm_121, ~121 GB unified memory | driver 580.126.09 | both models on the GPU |
+| CUDA toolkit | 13.0 at `/usr/local/cuda-13.0` (`nvcc`) | building llama.cpp + jev-score |
+| llama.cpp checkout | `git clone https://github.com/ggml-org/llama.cpp` at `441df11f65ea0b6d0c72965aaf70c8241070ddcb` | runtime + GGUF conversion |
+| Python | 3.13 (system `python3`) | orchestrator, `jevstep`, evals |
+| Python runtime deps | `pip install tokenizers numpy` (the Jev model ships a `requirements.txt`) | the Jev GGUF runtime inside the orchestrator |
+| Python conversion deps | `torch`, `transformers`, `sentencepiece` + `llama.cpp/gguf-py` — script 03 builds its own `.venv` | step `03` only |
+| Python window dep | `textual` — script 06 installs it into the project venv | `jevstep-window` only |
+
+Everything except the conversion and the window runs on the system interpreter with the standard
+library plus `tokenizers`/`numpy`. On a non-GB10 CUDA machine, change `ARCH` in
+`scripts/01_build_llamacpp_cuda.sh` (default `121`).
+
+## Models
+
+The weights are **not** committed here (0.53–8.9 GB each). They stay in their public homes — point
+the stack at local copies:
+
+| model | role | public home | download |
+|---|---|---|---|
+| Jev-Style-0.8B-Decision-v3-GGUF · Q4_K_M 0.53 GB | stage 1 gate + stage 3 NLI | [Hugging Face `chaoliangUNSW/Jev-Style-0.8B-Decision-v3-GGUF`](https://huggingface.co/chaoliangUNSW/Jev-Style-0.8B-Decision-v3-GGUF) | `hf download chaoliangUNSW/Jev-Style-0.8B-Decision-v3-GGUF --local-dir ~/models/Jev-Style-0.8B-Decision-v3-GGUF` |
+| GELab-Zero-4B-preview · 8.9 GB safetensors | stage 2 answers (vision-language) | [ModelScope `stepfun-ai/GELab-Zero-4B-preview`](https://modelscope.cn/models/stepfun-ai/GELab-Zero-4B-preview) · [HF mirror](https://huggingface.co/stepfun-ai/GELab-Zero-4B-preview) | `modelscope download --model stepfun-ai/GELab-Zero-4B-preview --local_dir ~/spark-duo/models/GELab-Zero-4B-preview` |
+
+`config.json` expects the Jev directory at `~/models/Jev-Style-0.8B-Decision-v3-GGUF` and the
+converted GELab files under `~/spark-duo/models/` — edit those paths if you keep the weights
+elsewhere. The Jev directory must contain `tokenizer/`, `readout_config.json`, `jev_score.cpp` and
+the `.gguf`; `scripts/02` builds `bin/jev-score` from the `.cpp` against your CUDA llama.cpp.
+
+```sh
+sh scripts/02_rebuild_jev_score.sh    # build bin/jev-score (CUDA, --ngl 999)
+sh scripts/03_convert_gelab.sh        # f16 -> Q4_K_M + mmproj f16 (downloads the model if missing)
+```
+
 ## Build and run
 
 ```sh
@@ -152,6 +188,38 @@ sh scripts/04_serve.sh                    # llama-server (:8080) + orchestrator 
 
 `03` converts to f16 first because `convert_hf_to_gguf.py` only emits f16/bf16/q8_0 — K-quants
 need the separate `llama-quantize` pass. The vision tower goes to its own `mmproj` file.
+
+## Services and startup
+
+| process | address | started by |
+|---|---|---|
+| llama-server · GELab-Zero-4B Q4_K_M + mmproj f16 | `127.0.0.1:8080` | `scripts/04_serve.sh` |
+| orchestrator · HTTP + SSE API | `127.0.0.1:8090` | `scripts/04_serve.sh` |
+| jev-score · JSON-lines child (stage 1 + stage 3) | stdio | the orchestrator at startup |
+| approvals daemon | `~/.spark-duo/approvals.sock` | the orchestrator at startup |
+
+Logs land in `logs/vlm.log`, `logs/orchestrator.log`, PIDs in `logs/vlm.pid`,
+`logs/orchestrator.pid`. `scripts/04_serve.sh` is idempotent: it only starts what is not running.
+
+```sh
+# 1. bring the whole stack up (llama-server, health-gated, then the orchestrator)
+sh scripts/04_serve.sh
+curl -s localhost:8090/health
+
+# 2. put the CLI on PATH and talk to it
+ln -sfn "$PWD/bin/jevstep" ~/.local/bin/jevstep
+jevstep                                             # direct chat with the 4B, streamed
+jevstep -c policy.md "what is the refund window?"   # full pipeline, grounded in the file
+jevstep -m agent "which tools are enabled?"         # agent tier, live tool trace
+
+# 3. optional surfaces
+sh scripts/06_install_window.sh && jevstep-window   # Textual agent window
+
+# 4. optional: come back after a reboot (systemd user unit)
+sh scripts/05_autostart.sh
+systemctl --user enable --now spark-duo.service
+loginctl enable-linger "$USER"
+```
 
 ## Use it
 
