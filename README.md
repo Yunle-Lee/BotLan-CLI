@@ -8,6 +8,10 @@ unified memory: a 0.53 GB decision model decides what to do, a 4B vision-languag
 > **BotLan CLI on the DGX Spark.** BotLan's front end (this repository) drives exactly this
 > stack: the `jevstep` CLI and the agent window talk to Jev + GELab-Zero-4B, both served locally
 > on the GB10. Installation, benchmark data and every measured table live below.
+>
+> **BotLan desktop panel → this Spark in one command:** `sh scripts/08_botlan.sh --install`, then
+> an SSH tunnel to `127.0.0.1:8091`. Jev picks the skill, the 4B runs it, and every command waits
+> for your approval in the panel. See [BotLan gateway](#botlan-gateway-botlan_gatewaypy-1270018091).
 
 ```
 request (state up to 25,600 tokens, optionally an image)
@@ -71,7 +75,7 @@ client (curl · jevstep · any OpenAI client)
            │   ├─ branch prompt: "Context:\n{state}\n\nQuestion: {question}\n\n…"
            │   └─ vlm_chat / vlm_stream ──▶ llama-server :8080
            │         GELab-Zero-4B-preview (stepfun-ai, a Qwen3-VL-4B fine-tune) Q4_K_M + mmproj f16
-           │         -ngl 99 · -c 32768 · -fa on · max_tokens per branch (512 / 256 / 128)
+           │         -ngl 99 · -c 65536 (VCTX, shared by 4 slots) · -fa on · max_tokens per branch (512 / 256 / 128)
            │         sampling: repeat_penalty 1.1 · repeat_last_n 256 · top_p 0.9
            │         streaming passes LoopGuard: same period (≥4 chars) three times → cut + honest stop
            │
@@ -127,7 +131,8 @@ ones (it verifies with `{"context", "answer"}` as its state, a prefix the gate's
 
 ```
 orchestrator.py              the whole HTTP stack in one process (:8090)
-config.json                  routes, gate options, agent policy, sampling
+botlan_gateway.py            the BotLan panel's door (:8091): chat + tools, skill routing, exec, zones
+config.json                  routes, gate options, agent policy, sampling, botlan_gateway block
 eval.py                      11 curated grounding/trap cases
 agent/                       the tool loop + the approvals/surface/tab port from Empryo's hearth layer
   loop.py tools.py approvals.py protocol.py surface.py tab_loop.py
@@ -139,7 +144,7 @@ bin/
   jev-approve                approval hook CLI (0 allow / 2 block, fail-closed)
   jev-score                  Jev scorer (libllama, JSON-lines over stdin/stdout)
 tui/                         the Textual client (SSE + approvals)
-scripts/                     01 build llama.cpp CUDA → 07 eval
+scripts/                     01 build llama.cpp CUDA → 07 eval, 08 BotLan gateway
 eval/                        routing + agent eval cases and runners
 benchmarks/                  measured data: single-stream and concurrency (REPORT.md, raw.json, summary.json)
 ```
@@ -201,6 +206,7 @@ need the separate `llama-quantize` pass. The vision tower goes to its own `mmpro
 | orchestrator · HTTP + SSE API | `127.0.0.1:8090` | `scripts/04_serve.sh` |
 | jev-score · JSON-lines child (stage 1 + stage 3) | stdio | the orchestrator at startup |
 | approvals daemon | `~/.spark-duo/approvals.sock` | the orchestrator at startup |
+| BotLan gateway · chat + tools, exec, telemetry, zones | `127.0.0.1:8091` | `scripts/08_botlan.sh` |
 
 Logs land in `logs/vlm.log`, `logs/orchestrator.log`, PIDs in `logs/vlm.pid`,
 `logs/orchestrator.pid`. `scripts/04_serve.sh` is idempotent: it only starts what is not running.
@@ -256,6 +262,52 @@ sh scripts/08_botlan.sh            # start Spark Duo if needed + the gateway, pr
 sh scripts/08_botlan.sh --install  # same, as systemd user units (spark-duo + botlan-gateway)
 # laptop:  ssh -N -L 8091:127.0.0.1:8091 user@spark   ->  Bot base URL http://127.0.0.1:8091/v1
 ```
+
+### Connect the BotLan panel
+
+1. On the Spark: `sh scripts/08_botlan.sh --install`. It prints the Bot settings; the key is
+   `cat ~/.spark-duo/botlan.key`. For start at boot without a login, run once:
+   `sudo loginctl enable-linger "$USER"`.
+2. On Windows, keep the tunnel up (reconnects on drop): BotLan's `Packaging\Connect-Spark.ps1
+   -Spark user@spark`, or plain `ssh -N -L 8091:127.0.0.1:8091 user@spark`.
+3. In BotLan, add a Bot: base URL `http://127.0.0.1:8091/v1`, model `jev-step`, API key from step 1.
+   Its Chat shows the Spark status strip (memory, GPU, the Jev route) and approval cards.
+
+One turn, end to end:
+
+```
+"check the Spark's health"
+  → Jev-0.8B  /decide over the installed skills    → spark-node-health · 0.95 · 28 ms
+  → GELab-4B  load_skill, then run_spark_command("nvidia-smi", reason)
+  → BotLan    "Run on DGX Spark?" card, command shown verbatim → you approve
+  → gateway   /botlan/exec → exit code + output back into the conversation
+```
+
+Denied, unanswered for 5 minutes, or an aborted run all count as a denial. The model cannot approve.
+
+### Endpoints
+
+| method | path | key | what |
+| --- | --- | --- | --- |
+| GET | `/health` | any | models up, available memory |
+| GET | `/v1/models` | any | `jev-step` |
+| POST | `/v1/chat/completions` | any | OpenAI chat, `stream` + `tools` passed through, Jev skill hint added |
+| GET | `/botlan/routes` | any | recent Jev routing decisions (what the panel shows) |
+| GET | `/botlan/telemetry` | any | unified memory, GPU util / temp / power, GPU processes |
+| POST | `/botlan/exec` | any | `{"command", "cwd"?}` → `{exit_code, output, truncated, timed_out}`; zone keys run inside their slice |
+| GET | `/botlan/zones` | any | zones, assignable memory (`total − reserved_gb − assigned`) |
+| POST | `/botlan/zones` | master | `{"name", "mem_gb", "cpu_pct"}` → zone + its key (shown once); 409 if over budget |
+| POST | `/botlan/zones/<id>/delete` | master | stop everything in the slice, revoke the key; work dir kept |
+
+```sh
+K=$(cat ~/.spark-duo/botlan.key)
+curl -s -H "Authorization: Bearer $K" localhost:8091/botlan/telemetry
+curl -s -H "Authorization: Bearer $K" -d '{"name":"vision","mem_gb":24,"cpu_pct":400}' localhost:8091/botlan/zones
+```
+
+`config.json → botlan_gateway`: `port`, `allow_exec`, `exec_root`, `exec_timeout_s` (60),
+`exec_max_output_bytes` (64000), `exec_concurrency` (2), `route_threshold` (0.5), `max_skills` (15),
+plus `reserved_gb` (16) and `zones_root` (`~/botlan-zones`) if you need to change them.
 
 ## Use it
 
@@ -622,6 +674,9 @@ NVFP4 stage 2 later.
 * Intent accuracy of 7/11 on a 12-way taxonomy is the honest ceiling for this model out of its
   training distribution. Tighten it with your own labelled traffic and a fitted family, not with
   more wording.
+* BotLan gateway: commands run as this user, never with sudo. Zones cap CPU-side memory, CPU and
+  task count, not CUDA allocations, and share one Unix user. GELab-4B is not a reasoning model and
+  sometimes lists commands instead of calling the tool; asking again usually works.
 
 ## Sampling: why long replies used to loop
 

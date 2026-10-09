@@ -5,6 +5,8 @@
 [English](README.md) | **中文**
 
 > **DGX Spark 上的 BotLan CLI。** BotLan 的前端（本仓库）驱动的正是这套栈：`jevstep` CLI 和 agent 窗口与 Jev + GELab-Zero-4B 对话，二者都本地运行在 GB10 上。安装方式、基准数据和全部实测表格都在下文。
+>
+> **BotLan 桌面面板一条命令接入这台 Spark：** `sh scripts/08_botlan.sh --install`，再建一条到 `127.0.0.1:8091` 的 SSH 隧道。Jev 选技能，4B 照技能执行，每条命令都要你在面板里批准。见 [BotLan 网关](#botlan-网关botlan_gatewaypy1270018091)。
 
 ```
 request（state 最长 25,600 tokens，可选带一张图片）
@@ -68,7 +70,7 @@ client（curl · jevstep · 任意 OpenAI 客户端）
            │   ├─ 分支提示词： "Context:\n{state}\n\nQuestion: {question}\n\n…"
            │   └─ vlm_chat / vlm_stream ──▶ llama-server :8080
            │         GELab-Zero-4B-preview（stepfun-ai，Qwen3-VL-4B 微调）Q4_K_M + mmproj f16
-           │         -ngl 99 · -c 32768 · -fa on · 每分支 max_tokens（512 / 256 / 128）
+           │         -ngl 99 · -c 65536（VCTX，4 个 slot 共享）· -fa on · 每分支 max_tokens（512 / 256 / 128）
            │         采样：repeat_penalty 1.1 · repeat_last_n 256 · top_p 0.9
            │         流式经过 LoopGuard：同一周期（≥4 字符）出现三次 → 截断 + 诚实收尾
            │
@@ -115,7 +117,8 @@ stages{gate_ms, vlm_ms, verify_ms, total_ms}
 
 ```
 orchestrator.py              整条 HTTP 栈，单进程（:8090）
-config.json                  路由、门控选项、agent 策略、采样
+botlan_gateway.py            BotLan 面板的入口（:8091）：对话 + 工具、技能路由、执行、分区
+config.json                  路由、门控选项、agent 策略、采样、botlan_gateway 配置块
 eval.py                      11 个人工校准的 grounding/陷阱用例
 agent/                       工具循环 + 从 Empryo hearth 层移植的 approvals/surface/tab
   loop.py tools.py approvals.py protocol.py surface.py tab_loop.py
@@ -182,6 +185,7 @@ sh scripts/04_serve.sh                    # llama-server（:8080）+ orchestrato
 | orchestrator · HTTP + SSE API | `127.0.0.1:8090` | `scripts/04_serve.sh` |
 | jev-score · JSON-lines 子进程（stage 1 + stage 3） | stdio | orchestrator 启动时 |
 | approvals daemon | `~/.spark-duo/approvals.sock` | orchestrator 启动时 |
+| BotLan 网关 · 对话 + 工具、执行、遥测、分区 | `127.0.0.1:8091` | `scripts/08_botlan.sh` |
 
 日志落在 `logs/vlm.log`、`logs/orchestrator.log`，PID 在 `logs/vlm.pid`、`logs/orchestrator.pid`。`scripts/04_serve.sh` 是幂等的：只启动尚未运行的服务。
 
@@ -222,6 +226,46 @@ sh scripts/08_botlan.sh            # 需要时启动 Spark Duo，再启动网关
 sh scripts/08_botlan.sh --install  # 同上，并安装 systemd 用户单元（spark-duo + botlan-gateway）
 # 笔记本：ssh -N -L 8091:127.0.0.1:8091 user@spark  ->  Bot 地址 http://127.0.0.1:8091/v1
 ```
+
+### 接入 BotLan 面板
+
+1. 在 Spark 上：`sh scripts/08_botlan.sh --install`。它会打印 Bot 接入信息，Key 用 `cat ~/.spark-duo/botlan.key` 查看。想要不登录也开机自启，执行一次 `sudo loginctl enable-linger "$USER"`。
+2. 在 Windows 上保持隧道（断线自动重连）：BotLan 的 `Packaging\Connect-Spark.ps1 -Spark user@spark`，或直接 `ssh -N -L 8091:127.0.0.1:8091 user@spark`。
+3. 在 BotLan 里添加 Bot：地址 `http://127.0.0.1:8091/v1`，模型 `jev-step`，API Key 填第 1 步的那串。Chat 顶部会出现 Spark 状态条（内存、GPU、Jev 路由）和审批卡片。
+
+一轮对话的完整路径：
+
+```
+"检查一下 Spark 健康"
+  → Jev-0.8B  对已装技能做 /decide              → spark-node-health · 0.95 · 28 ms
+  → GELab-4B  load_skill，然后 run_spark_command("nvidia-smi", 理由)
+  → BotLan    弹出"在 DGX Spark 上执行？"卡片，原样显示命令 → 你批准
+  → 网关      /botlan/exec → 退出码 + 输出回到对话
+```
+
+拒绝、5 分钟无人处理、对话中断都视为拒绝。模型无法自己批准。
+
+### 接口
+
+| 方法 | 路径 | Key | 作用 |
+| --- | --- | --- | --- |
+| GET | `/health` | 任意 | 模型是否在线、可用内存 |
+| GET | `/v1/models` | 任意 | `jev-step` |
+| POST | `/v1/chat/completions` | 任意 | OpenAI 对话，透传 `stream` + `tools`，附加 Jev 技能提示 |
+| GET | `/botlan/routes` | 任意 | 最近的 Jev 路由决策（面板显示的就是它） |
+| GET | `/botlan/telemetry` | 任意 | 统一内存、GPU 利用率 / 温度 / 功耗、GPU 进程 |
+| POST | `/botlan/exec` | 任意 | `{"command", "cwd"?}` → `{exit_code, output, truncated, timed_out}`；分区 Key 在自己的 slice 内执行 |
+| GET | `/botlan/zones` | 任意 | 分区列表、可分配内存（`总量 − reserved_gb − 已分配`） |
+| POST | `/botlan/zones` | 主 Key | `{"name", "mem_gb", "cpu_pct"}` → 分区 + 它的 Key（只显示一次）；超预算返回 409 |
+| POST | `/botlan/zones/<id>/delete` | 主 Key | 结束 slice 里的全部进程、吊销 Key；工作目录保留 |
+
+```sh
+K=$(cat ~/.spark-duo/botlan.key)
+curl -s -H "Authorization: Bearer $K" localhost:8091/botlan/telemetry
+curl -s -H "Authorization: Bearer $K" -d '{"name":"vision","mem_gb":24,"cpu_pct":400}' localhost:8091/botlan/zones
+```
+
+`config.json → botlan_gateway`：`port`、`allow_exec`、`exec_root`、`exec_timeout_s`（60）、`exec_max_output_bytes`（64000）、`exec_concurrency`（2）、`route_threshold`（0.5）、`max_skills`（15），需要时还可加 `reserved_gb`（16）和 `zones_root`（`~/botlan-zones`）。
 
 ## 使用
 
@@ -490,6 +534,7 @@ stage 3 的 `insufficient` —— 从第一版就计算却被丢弃 —— 正�
 
 * Jev 是纯文本的，看不见请求携带图片：它把一个 OCR 请求打成 `other_support` 0.77。`gate.image_bypass`（默认 true）把 gate 的意见记为 `gate_intent`，并用通用分支作答，而不是仅凭文本升级。
 * 在一个 12 类分类法上 7/11 的 intent 准确率，是这个模型在其训练分布之外的诚实上限。用你自己的标注流量和一个拟合家族来收紧它，而不是更多措辞。
+* BotLan 网关：命令以当前用户运行，没有 sudo。分区限制 CPU 侧内存、CPU 和进程数，不限制 CUDA 分配，且所有分区共用一个 Unix 用户。GELab-4B 不是推理模型，偶尔只列命令而不调用工具，重问一次通常就行。
 
 ## 采样：长回复过去为什么会循环
 
