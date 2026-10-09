@@ -10,6 +10,7 @@ VLM=$MODELS/gelab-zero-4b-Q4_K_M.gguf
 MMPROJ=$MODELS/gelab-zero-4b-mmproj-f16.gguf
 VPORT=${VPORT:-8080}
 OPORT=${OPORT:-8090}
+VCTX=${VCTX:-65536}     # shared by the 4 slots; BotLan agent turns need ~16K each
 mkdir -p "$LOGS"
 
 [ -f "$VLM" ]    || { echo "missing $VLM — run 03" >&2; exit 1; }
@@ -17,7 +18,7 @@ mkdir -p "$LOGS"
 
 if [ ! -f "$LOGS/vlm.pid" ] || ! kill -0 "$(cat "$LOGS/vlm.pid")" 2>/dev/null; then
   nohup "$BIN/llama-server" -m "$VLM" --mmproj "$MMPROJ" \
-    -ngl 99 -c 32768 -fa on --host 127.0.0.1 --port "$VPORT" \
+    -ngl 99 -c "$VCTX" -fa on --host 127.0.0.1 --port "$VPORT" \
     > "$LOGS/vlm.log" 2>&1 &
   echo $! > "$LOGS/vlm.pid"
   echo "vlm: pid $(cat "$LOGS/vlm.pid") on :$VPORT"

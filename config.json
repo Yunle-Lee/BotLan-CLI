@@ -142,5 +142,19 @@
       "max_tokens": 128,
       "prompt": "Context:\n{state}\n\nQuestion: {question}\n\nReply that this is outside the supportable scope, in one sentence."
     }
+  },
+  "botlan_gateway": {
+    "host": "127.0.0.1",
+    "port": 8091,
+    "model": "jev-step",
+    "key_file": "~/.spark-duo/botlan.key",
+    "route_threshold": 0.5,
+    "max_skills": 15,
+    "allow_exec": true,
+    "exec_root": "~",
+    "exec_timeout_s": 60,
+    "exec_max_output_bytes": 64000,
+    "exec_concurrency": 2,
+    "note": "The BotLan panel's door (botlan_gateway.py). Bearer key required; 127.0.0.1 only, reach it over SSH. allow_exec lets /botlan/exec run bash as this unprivileged user - the panel parks every command on a human approval first. Set it false to make the Spark read-only to BotLan."
   }
 }

@@ -225,6 +225,38 @@ systemctl --user enable --now spark-duo.service
 loginctl enable-linger "$USER"
 ```
 
+## BotLan gateway (`botlan_gateway.py`, `127.0.0.1:8091`)
+
+The orchestrator's `/v1/chat/completions` is the support pipeline: it ignores `stream` and `tools`
+and classifies every request into support intents, so an agent panel cannot use it. The gateway is
+the door for the BotLan desktop panel and sits next to it - nothing else changes:
+
+- **OpenAI-compatible chat** with SSE streaming and `tools` / `tool_calls` passed through to
+  llama-server (GELab's template emits real tool calls).
+- **Jev as skill router.** The panel's prompt lists the Bot's installed Agent Skills; the gateway
+  asks Jev (`/decide`, ~30 ms, no generation) which one matches the latest user turn and tells the
+  4B to `load_skill` it. Advice only: the full index stays in the prompt. Measured: "检查 Spark 健康"
+  → `spark-node-health` 0.95, "TensorRT-LLM NVFP4" → `spark-trtllm-serve` 0.87, small talk → `none` 0.99.
+- **Approved execution.** `POST /botlan/exec` runs one bash command as this user (timeout,
+  output cap, process-group kill). The panel parks every call on a human approval first;
+  `allow_exec: false` makes the Spark read-only to BotLan.
+- **Telemetry** (`/botlan/telemetry`): unified-memory pool, GPU util/temp/power, GPU processes.
+- **Zones** (`/botlan/zones`): split the Spark into zones, one Bot each. A zone is a systemd user
+  slice (`MemoryMax`, `CPUQuota`, `TasksMax`), a work directory and its own key. Commands with a zone
+  key run inside the slice. Measured: a 3 GB allocation is killed under a 1 GB zone. **Not enforced:**
+  CUDA allocations (a 2.5 GB model loaded under a 1 GB cap), so a zone's GPU share is a budget the
+  Bot passes to the engine. All zones share one Unix user: a resource partition, not a security
+  boundary.
+
+Every request needs `Authorization: Bearer` - the master key in `~/.spark-duo/botlan.key` (0600,
+created on first start) or a zone key (stored as sha256 only). Binds 127.0.0.1; reach it over SSH.
+
+```sh
+sh scripts/08_botlan.sh            # start Spark Duo if needed + the gateway, print the Bot settings
+sh scripts/08_botlan.sh --install  # same, as systemd user units (spark-duo + botlan-gateway)
+# laptop:  ssh -N -L 8091:127.0.0.1:8091 user@spark   ->  Bot base URL http://127.0.0.1:8091/v1
+```
+
 ## Use it
 
 ```sh

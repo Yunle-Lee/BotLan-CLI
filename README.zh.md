@@ -205,6 +205,24 @@ systemctl --user enable --now spark-duo.service
 loginctl enable-linger "$USER"
 ```
 
+## BotLan 网关（`botlan_gateway.py`，`127.0.0.1:8091`）
+
+编排器的 `/v1/chat/completions` 是客服管线：忽略 `stream` 和 `tools`，并把每个请求分到客服意图里，Agent 面板用不了。网关是 BotLan 桌面面板的入口，与它并列运行，其余不变：
+
+- **OpenAI 兼容对话**：SSE 流式，`tools` / `tool_calls` 原样透传给 llama-server。
+- **Jev 做技能路由**：面板的系统提示词里有该 Bot 已装的 Agent Skills；网关让 Jev（`/decide`，约 30 ms，不生成）选出与最新一轮用户请求匹配的技能，再提示 4B 先 `load_skill`。只是建议，完整目录仍在提示词里。实测：“检查 Spark 健康”→ `spark-node-health` 0.95，“TensorRT-LLM NVFP4”→ `spark-trtllm-serve` 0.87，闲聊 → `none` 0.99。
+- **审批后执行**：`POST /botlan/exec` 以当前用户执行一条 bash（超时、输出上限、按进程组终止）。面板在每次调用前都要人工批准；`allow_exec: false` 让 Spark 对 BotLan 只读。
+- **遥测**（`/botlan/telemetry`）：统一内存池、GPU 利用率/温度/功耗、GPU 进程。
+- **分区**（`/botlan/zones`）：把 Spark 切成若干区，一区一个 Bot。每个区是一个 systemd 用户 slice（`MemoryMax`、`CPUQuota`、`TasksMax`）、一个工作目录和一把独立 Key，带分区 Key 的命令在该 slice 内运行。实测：1 GB 分区里申请 3 GB 会被杀掉。**不受约束的部分**：CUDA 分配（1 GB 上限下照样加载了 2.5 GB 模型），所以分区的 GPU 份额是一个预算，需要 Bot 在启动引擎时自己遵守。所有分区共用一个 Unix 用户：这是资源划分，不是 Bot 之间的安全边界。
+
+每个请求都要 `Authorization: Bearer`：主 Key 在 `~/.spark-duo/botlan.key`（0600，首次启动生成），或分区 Key（只存 sha256）。只监听 127.0.0.1，通过 SSH 访问。
+
+```sh
+sh scripts/08_botlan.sh            # 需要时启动 Spark Duo，再启动网关，打印 Bot 接入信息
+sh scripts/08_botlan.sh --install  # 同上，并安装 systemd 用户单元（spark-duo + botlan-gateway）
+# 笔记本：ssh -N -L 8091:127.0.0.1:8091 user@spark  ->  Bot 地址 http://127.0.0.1:8091/v1
+```
+
 ## 使用
 
 ```sh
