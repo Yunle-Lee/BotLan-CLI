@@ -1,0 +1,146 @@
+{
+  "orchestrator": {
+    "host": "127.0.0.1",
+    "port": 8090
+  },
+  "jev": {
+    "model_dir": "~/models/Jev-Style-0.8B-Decision-v3-GGUF",
+    "quant": "Q4_K_M",
+    "n_gpu_layers": 999,
+    "many_mode": "exact"
+  },
+  "vlm": {
+    "base_url": "http://127.0.0.1:8080",
+    "max_tokens": 512,
+    "temperature": 0.2,
+    "timeout_s": 180,
+    "system": "You answer from the provided context only. If the context does not contain the answer, say so in one sentence. If you are reciting from memory and it runs out, say so plainly and stop - never repeat yourself to fill space.",
+    "default_question": "Answer the user's request using only the context.",
+    "sampling": {
+      "repeat_penalty": 1.1,
+      "repeat_last_n": 256,
+      "top_p": 0.9
+    },
+    "sampling_note": "llama.cpp serves with no repetition penalty by default. A 4B model that runs out of memorised text re-enters its own most recent output; measured on a fixed seed, a 58-char block repeated 3x without this and 0x with it.",
+    "loop_guard": {
+      "enabled": true,
+      "max_period": 128,
+      "repeats": 3,
+      "min_period": 4,
+      "exit_cjk": "呃……我只记得这么多了，后面想不起来了。",
+      "exit_latin": "… that is as much as I can recall; I have lost the thread.",
+      "note": "Streaming cannot unsend tokens, so this fires after the third repeat and appends an honest stop instead of letting it spin."
+    }
+  },
+  "gate": {
+    "category": "intent_support",
+    "question": "What is the customer asking for?",
+    "note": "12 options -> bucket 11-20, the best-sampled fitted group in readout_config.json (intent|choice|11-20, n=4233)",
+    "threshold": 0.4,
+    "image_bypass": true,
+    "options": {
+      "refund_request": "asks about a refund, a duplicate charge or money back",
+      "subscription_billing": "asks about plans, seats, pricing, invoices or how much something costs",
+      "service_level": "asks about uptime, SLA, opening hours or response times",
+      "record_lookup": "asks for one specific live record such as an order status, a balance, a shipment or a ticket that is not in the state",
+      "account_lifecycle": "asks to restore, delete, close or regain access to an account or workspace",
+      "security_abuse": "reports spam, phishing, harassment, fraud or a policy violation",
+      "technical_issue": "reports a bug, an error, an outage or slow performance",
+      "policy_question": "asks what the terms, rules or policy are",
+      "data_privacy": "asks about personal data, deleting data or exporting data",
+      "sales_enquiry": "asks to buy, upgrade, price a deal, or book a demo",
+      "creative_or_chat": "asks for creative writing, entertainment or general chat rather than support",
+      "other_support": "a support request that fits none of the above"
+    },
+    "unanswerable_intents": [
+      "record_lookup"
+    ],
+    "refuse_intents": [
+      "creative_or_chat"
+    ],
+    "branch_by_intent": {
+      "refund_request": "answer_from_state",
+      "subscription_billing": "answer_from_state",
+      "service_level": "answer_from_state",
+      "account_lifecycle": "answer_from_state",
+      "policy_question": "answer_from_state",
+      "data_privacy": "answer_from_state",
+      "other_support": "answer_from_state",
+      "record_lookup": "needs_lookup",
+      "security_abuse": "safety_review",
+      "technical_issue": "answer_from_state",
+      "sales_enquiry": "answer_from_state",
+      "creative_or_chat": "off_topic"
+    },
+    "qtype": "choice",
+    "compose": "{state}\n\nCustomer request: {question}",
+    "threshold_note": "Measured over eval/cases.jsonl: harmful (answered with the wrong branch) is 2 at 0.3/0.4/0.5 and 1 at 0.6/0.7, while unnecessary escalations are 0/1/4/6/11. The threshold is not the safety lever; the intent->branch mapping is."
+  },
+  "fallback": {
+    "message": "Not confident enough to answer (branch: {branch}). Escalate to a human or a larger model."
+  },
+  "verify": {
+    "enabled": true,
+    "qtype": "choice",
+    "category": "nli_support",
+    "question": "How does the answer relate to the context?",
+    "options": {
+      "supported": "the context entails the answer",
+      "contradicted": "the context contradicts the answer",
+      "insufficient": "the context does not say enough to judge"
+    },
+    "bad_option": "contradicted",
+    "threshold": 0.6,
+    "note": "3 options -> bucket 3-5, matches nli|choice|3-5"
+  },
+  "agent": {
+    "enabled": true,
+    "root": "~/spark-duo",
+    "tools": ["read_file", "list_dir", "glob", "grep", "http_fetch", "write_file"],
+    "max_steps": 6,
+    "max_seconds": 180,
+    "tool_timeout_s": 30,
+    "max_output_bytes": 60000,
+    "max_hits": 200,
+    "allow_shell": false,
+    "allow_write": true,
+    "require_approval": true,
+    "respect_refusals": false,
+    "respect_refusals_note": "The gate's refuse list (creative_or_chat) was fitted on support traffic and misfires in the agent tier: 'Write a file notes/hello.txt with ...' scores creative_or_chat 0.54 and was refused before any tool ran. With this false the tier still gates, still jails every path and still parks mutating calls on an approval - the boundary is the tools, not the intent label.",
+    "approval_socket": "~/.spark-duo/approvals.sock",
+    "approval_timeout_ms": 300000,
+    "auto_approve": [],
+    "auto_deny": ["shell"],
+    "approval_note": "allow_write only opens the switch - every write_file call still parks on an approval that must come from outside the loop: the TUI (/yes, /no), POST /approve, or `jev-approve allow <id>` over the socket. Nothing waits forever: the registry denies on timeout and denies new requests past its cap, so a wedged client cannot approve anything by staying silent.",
+    "system": "You are an agent working inside a sandboxed workspace. Use a tool when you need to look at something; never guess file contents. When you have enough, answer directly and cite the file you read.",
+    "note": "Read-only by default: the root is the jail, allow_write/allow_shell are the only ways to mutate anything, and mutating calls need an approval recorded by the client. Model capabilities verified on this box: GELab's chat template declares tools and llama-server returns real tool_calls, so the loop needs no output parsing.",
+    "jev": {
+      "pick_action": false,
+      "verify_each_step": false,
+      "done": false,
+      "note": "All three are OFF until their calibration group is FITTED. require_fitted() refuses to start on an unfitted group rather than silently running at the global temperature, and a new question/options shape is by definition not in readout_config.json."
+    }
+  },
+  "branches": {
+    "answer_from_state": {
+      "describe": "enough information is present to answer directly from the state",
+      "max_tokens": 512,
+      "prompt": "Context:\n{state}\n\nQuestion: {question}\n\nAnswer using only the context. Be concise."
+    },
+    "needs_lookup": {
+      "describe": "the answer needs external data that the state does not contain",
+      "max_tokens": 256,
+      "prompt": "Context:\n{state}\n\nQuestion: {question}\n\nState precisely what is missing and what should be looked up. Do not guess."
+    },
+    "safety_review": {
+      "describe": "a policy, abuse or safety judgement",
+      "max_tokens": 256,
+      "prompt": "Context:\n{state}\n\nQuestion: {question}\n\nSummarise the policy-relevant facts only, with no recommendation."
+    },
+    "off_topic": {
+      "describe": "not a request this system should answer",
+      "max_tokens": 128,
+      "prompt": "Context:\n{state}\n\nQuestion: {question}\n\nReply that this is outside the supportable scope, in one sentence."
+    }
+  }
+}

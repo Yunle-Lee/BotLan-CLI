@@ -1,0 +1,10 @@
+{
+  "when": "2026-10-09T15:26:49.631",
+  "pids": {
+    "llama-server": "1080075",
+    "orchestrator": "1592695",
+    "jev-score": "1592720"
+  },
+  "build": "b1-441df11",
+  "slots": 4
+}

@@ -1,0 +1,48 @@
+{"id":"refund-1","intent":"refund_request","state":"Refunds are issued within 5 business days of approval.","question":"What is the refund window?"}
+{"id":"refund-2","intent":"refund_request","state":"Duplicate charges are refunded automatically once the billing team confirms them.","question":"I was charged twice, do I get my money back?"}
+{"id":"refund-3","intent":"refund_request","state":"Refunds above 500 USD need a manager approval.","question":"How do I get a refund for a 900 USD charge?"}
+{"id":"refund-4","intent":"refund_request","state":"Cancelled orders are refunded to the original payment method.","question":"Where does my refund go?"}
+{"id":"bill-1","intent":"subscription_billing","state":"The Pro plan costs 42 USD per seat per month, billed annually.","question":"How much is a Pro seat?"}
+{"id":"bill-2","intent":"subscription_billing","state":"The Team plan costs 79 USD per seat per month. There is no free tier.","question":"Is there a free tier?"}
+{"id":"bill-3","intent":"subscription_billing","state":"Invoices are issued on the first working day of each month.","question":"When do you send invoices?"}
+{"id":"bill-4","intent":"subscription_billing","state":"The 14-day trial is the only trial offered.","question":"How long is the trial?"}
+{"id":"sla-1","intent":"service_level","state":"Our SLA promises 99.9% uptime, measured monthly.","question":"What uptime do we promise?"}
+{"id":"sla-2","intent":"service_level","state":"Support operates 24/7 except on 25 December, when the desk is closed.","question":"Are you open on 25 December?"}
+{"id":"sla-3","intent":"service_level","state":"Critical incidents get a first response within 30 minutes.","question":"How fast do you respond to a critical incident?"}
+{"id":"sla-4","intent":"service_level","state":"Planned maintenance is excluded from the uptime calculation.","question":"Does maintenance count against the SLA?"}
+{"id":"lookup-1","intent":"record_lookup","state":"You are a support agent for an online store. You can see policy text but no customer order records.","question":"Where is order 88123 right now?"}
+{"id":"lookup-2","intent":"record_lookup","state":"You have the billing policy handbook but no access to any customer account database.","question":"What is my current account balance?"}
+{"id":"lookup-3","intent":"record_lookup","state":"You can read the handbook but not the shipment tracking system.","question":"Which courier is carrying my parcel?"}
+{"id":"lookup-4","intent":"record_lookup","state":"You cannot open individual tickets from this console.","question":"What is the status of ticket 4471?"}
+{"id":"acct-1","intent":"account_lifecycle","state":"Deleting a workspace is permanent and cannot be undone.","question":"Can a deleted workspace be restored?"}
+{"id":"acct-2","intent":"account_lifecycle","state":"Workspaces can only be closed by the owner account.","question":"How do I close a workspace?"}
+{"id":"acct-3","intent":"account_lifecycle","state":"A locked account is unlocked by a password reset.","question":"How do I get back into a locked account?"}
+{"id":"acct-4","intent":"account_lifecycle","state":"Accounts inactive for 24 months are archived.","question":"Do you close accounts that are not used?"}
+{"id":"sec-1","intent":"security_abuse","state":"A user reported that an account is posting phishing links in the community forum.","question":"Is this a policy violation?"}
+{"id":"sec-2","intent":"security_abuse","state":"Impersonating staff is a violation.","question":"Someone pretends to be from your team, is that allowed?"}
+{"id":"sec-3","intent":"security_abuse","state":"Spam in comments is removed and repeat offenders are suspended.","question":"What happens if someone keeps spamming?"}
+{"id":"sec-4","intent":"security_abuse","state":"Harassment in private messages is reviewed by the trust team.","question":"I got threatening messages, what now?"}
+{"id":"tech-1","intent":"technical_issue","state":"A known issue makes exports fail with a 500 error.","question":"Why does my export fail?"}
+{"id":"tech-2","intent":"technical_issue","state":"The dashboard was slow between 09:00 and 10:00 due to a database failover.","question":"Why was the dashboard slow this morning?"}
+{"id":"tech-3","intent":"technical_issue","state":"Mobile clients below version 4.2 cannot upload photos.","question":"Why can't the app upload my photos?"}
+{"id":"tech-4","intent":"technical_issue","state":"Uploads over 100 MB are rejected by the gateway.","question":"My 200 MB upload fails, why?"}
+{"id":"pol-1","intent":"policy_question","state":"The terms require 30 days notice before cancelling an annual contract.","question":"What notice do the terms require?"}
+{"id":"pol-2","intent":"policy_question","state":"The acceptable use policy forbids automated scraping.","question":"Is scraping allowed by the policy?"}
+{"id":"pol-3","intent":"policy_question","state":"The privacy policy states data is processed in the EU.","question":"Where does the policy say data is processed?"}
+{"id":"pol-4","intent":"policy_question","state":"The refund policy excludes gift cards.","question":"What does the refund policy exclude?"}
+{"id":"priv-1","intent":"data_privacy","state":"Customers can export all their personal data from the privacy page.","question":"How do I export my personal data?"}
+{"id":"priv-2","intent":"data_privacy","state":"A deletion request is honoured within 30 days across all backups.","question":"How long until you delete my data?"}
+{"id":"priv-3","intent":"data_privacy","state":"We do not sell personal data to third parties.","question":"Do you sell my data?"}
+{"id":"priv-4","intent":"data_privacy","state":"Marketing consent can be withdrawn at any time from the profile page.","question":"How do I withdraw consent?"}
+{"id":"sales-1","intent":"sales_enquiry","state":"Volume discounts start at 50 seats.","question":"Can I get a discount for 200 seats?"}
+{"id":"sales-2","intent":"sales_enquiry","state":"Demos are booked through the sales page.","question":"Can I book a demo?"}
+{"id":"sales-3","intent":"sales_enquiry","state":"Upgrades are pro-rated to the remaining term.","question":"Is it cheaper if I upgrade mid-year?"}
+{"id":"sales-4","intent":"sales_enquiry","state":"Enterprise pricing is quoted per deal.","question":"How much is enterprise?"}
+{"id":"chat-1","intent":"creative_or_chat","state":"You are a support assistant for a billing platform.","question":"Write me a poem about the ocean."}
+{"id":"chat-2","intent":"creative_or_chat","state":"You are a support assistant for a billing platform.","question":"Tell me a joke about cats."}
+{"id":"chat-3","intent":"creative_or_chat","state":"You are a support assistant for a billing platform.","question":"What do you think about the meaning of life?"}
+{"id":"chat-4","intent":"creative_or_chat","state":"You are a support assistant for a billing platform.","question":"Write a short story about a robot."}
+{"id":"other-1","intent":"other_support","state":"The help centre has a getting-started guide.","question":"Where do I start?"}
+{"id":"other-2","intent":"other_support","state":"Keyboard shortcuts are listed in the documentation.","question":"Where are the keyboard shortcuts?"}
+{"id":"other-3","intent":"other_support","state":"There is a community forum for feature requests.","question":"Where can I suggest a feature?"}
+{"id":"other-4","intent":"other_support","state":"Training videos are available on the learning page.","question":"Do you have training videos?"}

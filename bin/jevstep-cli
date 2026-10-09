@@ -1,0 +1,13 @@
+#!/bin/sh
+# jevstep -> the MiniMax Code CLI (mcode), wired to the local Spark Duo stack.
+#
+# This is a launcher, not a re-implementation: it execs the installed mcode (npm global,
+# /home/user1/.local/bin/mcode, v0.6.5) so that "jevstep" opens that CLI's TUI. The model it runs is
+# the custom provider spark-duo-local -> http://127.0.0.1:8080/v1 (our local llama-server).
+#
+# mcode insists on an API key even for a keyless local endpoint, so pass a placeholder through if the
+# environment has none (the key it stored at provider-add time is "none").
+set -eu
+: "${MCODE_PROVIDER_API_KEY:=none}"
+export MCODE_PROVIDER_API_KEY
+exec mcode "$@"

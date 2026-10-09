@@ -1,0 +1,794 @@
+{
+  "route-c1": [
+    {
+      "wall_ms": 52.3,
+      "gate_ms": 51.0,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 40.2,
+      "gate_ms": 39.3,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 41.3,
+      "gate_ms": 40.4,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 38.7,
+      "gate_ms": 37.8,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 37.5,
+      "gate_ms": 36.5,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 37.0,
+      "gate_ms": 36.1,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 36.5,
+      "gate_ms": 35.6,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 36.2,
+      "gate_ms": 35.5,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 36.6,
+      "gate_ms": 35.8,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 38.2,
+      "gate_ms": 37.3,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 37.9,
+      "gate_ms": 37.0,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 37.1,
+      "gate_ms": 36.2,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 38.7,
+      "gate_ms": 36.9,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 37.0,
+      "gate_ms": 36.0,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 38.2,
+      "gate_ms": 37.0,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 38.8,
+      "gate_ms": 37.7,
+      "intent": "refund_request"
+    }
+  ],
+  "chat-c1": [
+    {
+      "wall_ms": 686.9,
+      "ttft_ms": 67.5,
+      "predicted_n": 47,
+      "decode_tok_s": 74.30644624574758
+    },
+    {
+      "wall_ms": 728.0,
+      "ttft_ms": 18.3,
+      "predicted_n": 54,
+      "decode_tok_s": 74.702704378847
+    },
+    {
+      "wall_ms": 853.9,
+      "ttft_ms": 19.0,
+      "predicted_n": 64,
+      "decode_tok_s": 75.44639114762344
+    },
+    {
+      "wall_ms": 552.6,
+      "ttft_ms": 21.1,
+      "predicted_n": 41,
+      "decode_tok_s": 75.29440110833357
+    },
+    {
+      "wall_ms": 594.6,
+      "ttft_ms": 18.7,
+      "predicted_n": 44,
+      "decode_tok_s": 74.68545266331797
+    },
+    {
+      "wall_ms": 748.7,
+      "ttft_ms": 19.7,
+      "predicted_n": 56,
+      "decode_tok_s": 75.46755581168787
+    },
+    {
+      "wall_ms": 689.5,
+      "ttft_ms": 21.6,
+      "predicted_n": 51,
+      "decode_tok_s": 74.85836796780492
+    },
+    {
+      "wall_ms": 733.9,
+      "ttft_ms": 21.0,
+      "predicted_n": 54,
+      "decode_tok_s": 74.37333449337025
+    }
+  ],
+  "answer-c1": [
+    {
+      "wall_ms": 347.8,
+      "ttft_ms": 68.2,
+      "gate_ms": 37.4,
+      "vlm_ms": 279.8,
+      "verify_ms": 29.2,
+      "escalate": false
+    },
+    {
+      "wall_ms": 290.0,
+      "ttft_ms": 74.0,
+      "gate_ms": 54.2,
+      "vlm_ms": 207.0,
+      "verify_ms": 27.5,
+      "escalate": false
+    },
+    {
+      "wall_ms": 488.8,
+      "ttft_ms": 71.5,
+      "gate_ms": 50.4,
+      "vlm_ms": 408.4,
+      "verify_ms": 28.5,
+      "escalate": false
+    },
+    {
+      "wall_ms": 365.3,
+      "ttft_ms": 70.6,
+      "gate_ms": 51.8,
+      "vlm_ms": 283.5,
+      "verify_ms": 28.6,
+      "escalate": false
+    },
+    {
+      "wall_ms": 292.2,
+      "ttft_ms": 77.8,
+      "gate_ms": 56.4,
+      "vlm_ms": 207.1,
+      "verify_ms": 27.6,
+      "escalate": false
+    },
+    {
+      "wall_ms": 398.8,
+      "ttft_ms": 73.9,
+      "gate_ms": 52.8,
+      "vlm_ms": 315.9,
+      "verify_ms": 28.5,
+      "escalate": false
+    },
+    {
+      "wall_ms": 477.3,
+      "ttft_ms": 72.1,
+      "gate_ms": 51.5,
+      "vlm_ms": 392.6,
+      "verify_ms": 31.9,
+      "escalate": false
+    },
+    {
+      "wall_ms": 494.5,
+      "ttft_ms": 74.3,
+      "gate_ms": 53.7,
+      "vlm_ms": 410.5,
+      "verify_ms": 29.0,
+      "escalate": false
+    }
+  ],
+  "route-c2": [
+    {
+      "wall_ms": 57.0,
+      "gate_ms": 55.0,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 96.0,
+      "gate_ms": 93.1,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 77.7,
+      "gate_ms": 75.2,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 75.8,
+      "gate_ms": 72.8,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 74.7,
+      "gate_ms": 72.2,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 73.8,
+      "gate_ms": 71.2,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 73.0,
+      "gate_ms": 70.4,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 72.0,
+      "gate_ms": 70.1,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 72.2,
+      "gate_ms": 69.6,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 74.1,
+      "gate_ms": 72.1,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 73.0,
+      "gate_ms": 71.9,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 72.5,
+      "gate_ms": 70.8,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 73.7,
+      "gate_ms": 70.7,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 73.1,
+      "gate_ms": 70.6,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 73.3,
+      "gate_ms": 70.6,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 75.0,
+      "gate_ms": 74.0,
+      "intent": "refund_request"
+    }
+  ],
+  "chat-c2": [
+    {
+      "wall_ms": 698.6,
+      "ttft_ms": 30.1,
+      "predicted_n": 46,
+      "decode_tok_s": 67.34984352386356
+    },
+    {
+      "wall_ms": 951.1,
+      "ttft_ms": 29.3,
+      "predicted_n": 62,
+      "decode_tok_s": 66.19706540812662
+    },
+    {
+      "wall_ms": 687.3,
+      "ttft_ms": 43.0,
+      "predicted_n": 45,
+      "decode_tok_s": 68.30887409898266
+    },
+    {
+      "wall_ms": 1004.2,
+      "ttft_ms": 48.4,
+      "predicted_n": 64,
+      "decode_tok_s": 65.93827549430156
+    },
+    {
+      "wall_ms": 730.6,
+      "ttft_ms": 47.9,
+      "predicted_n": 46,
+      "decode_tok_s": 65.92006093943411
+    },
+    {
+      "wall_ms": 932.4,
+      "ttft_ms": 50.0,
+      "predicted_n": 60,
+      "decode_tok_s": 66.91443911523234
+    },
+    {
+      "wall_ms": 979.1,
+      "ttft_ms": 47.3,
+      "predicted_n": 64,
+      "decode_tok_s": 67.62958311192698
+    },
+    {
+      "wall_ms": 808.6,
+      "ttft_ms": 42.8,
+      "predicted_n": 54,
+      "decode_tok_s": 69.2507202728217
+    }
+  ],
+  "answer-c2": [
+    {
+      "wall_ms": 396.5,
+      "ttft_ms": 134.0,
+      "gate_ms": 75.9,
+      "vlm_ms": 265.4,
+      "verify_ms": 52.8,
+      "escalate": false
+    },
+    {
+      "wall_ms": 708.2,
+      "ttft_ms": 134.0,
+      "gate_ms": 36.4,
+      "vlm_ms": 610.2,
+      "verify_ms": 58.5,
+      "escalate": false
+    },
+    {
+      "wall_ms": 699.2,
+      "ttft_ms": 127.8,
+      "gate_ms": 98.3,
+      "vlm_ms": 545.3,
+      "verify_ms": 53.3,
+      "escalate": false
+    },
+    {
+      "wall_ms": 695.9,
+      "ttft_ms": 126.0,
+      "gate_ms": 97.4,
+      "vlm_ms": 542.3,
+      "verify_ms": 53.5,
+      "escalate": false
+    },
+    {
+      "wall_ms": 709.2,
+      "ttft_ms": 134.1,
+      "gate_ms": 101.5,
+      "vlm_ms": 545.1,
+      "verify_ms": 60.1,
+      "escalate": false
+    },
+    {
+      "wall_ms": 556.9,
+      "ttft_ms": 128.9,
+      "gate_ms": 98.4,
+      "vlm_ms": 411.5,
+      "verify_ms": 44.4,
+      "escalate": false
+    },
+    {
+      "wall_ms": 465.9,
+      "ttft_ms": 125.3,
+      "gate_ms": 94.1,
+      "vlm_ms": 315.0,
+      "verify_ms": 54.3,
+      "escalate": false
+    },
+    {
+      "wall_ms": 696.5,
+      "ttft_ms": 145.1,
+      "gate_ms": 96.5,
+      "vlm_ms": 566.8,
+      "verify_ms": 31.1,
+      "escalate": false
+    }
+  ],
+  "route-c4": [
+    {
+      "wall_ms": 56.5,
+      "gate_ms": 52.2,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 97.3,
+      "gate_ms": 91.2,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 133.7,
+      "gate_ms": 128.1,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 171.2,
+      "gate_ms": 164.9,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 152.9,
+      "gate_ms": 150.0,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 150.9,
+      "gate_ms": 148.9,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 149.7,
+      "gate_ms": 147.3,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 148.6,
+      "gate_ms": 146.3,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 148.6,
+      "gate_ms": 145.7,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 147.2,
+      "gate_ms": 144.5,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 151.4,
+      "gate_ms": 149.2,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 153.4,
+      "gate_ms": 150.7,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 152.4,
+      "gate_ms": 149.8,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 150.6,
+      "gate_ms": 148.5,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 148.8,
+      "gate_ms": 145.9,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 146.3,
+      "gate_ms": 145.1,
+      "intent": "refund_request"
+    }
+  ],
+  "chat-c4": [
+    {
+      "wall_ms": 674.8,
+      "ttft_ms": 49.1,
+      "predicted_n": 39,
+      "decode_tok_s": 60.78502257043864
+    },
+    {
+      "wall_ms": 758.2,
+      "ttft_ms": 47.2,
+      "predicted_n": 43,
+      "decode_tok_s": 59.09375505638529
+    },
+    {
+      "wall_ms": 943.9,
+      "ttft_ms": 46.2,
+      "predicted_n": 53,
+      "decode_tok_s": 57.946724672823876
+    },
+    {
+      "wall_ms": 1065.8,
+      "ttft_ms": 47.9,
+      "predicted_n": 59,
+      "decode_tok_s": 57.00290518254689
+    },
+    {
+      "wall_ms": 848.7,
+      "ttft_ms": 50.9,
+      "predicted_n": 46,
+      "decode_tok_s": 56.449407532107166
+    },
+    {
+      "wall_ms": 851.7,
+      "ttft_ms": 52.1,
+      "predicted_n": 47,
+      "decode_tok_s": 57.54121389445189
+    },
+    {
+      "wall_ms": 921.4,
+      "ttft_ms": 53.0,
+      "predicted_n": 54,
+      "decode_tok_s": 61.0714466788656
+    },
+    {
+      "wall_ms": 856.6,
+      "ttft_ms": 49.4,
+      "predicted_n": 52,
+      "decode_tok_s": 63.21653149484786
+    }
+  ],
+  "answer-c4": [
+    {
+      "wall_ms": 585.1,
+      "ttft_ms": 296.2,
+      "gate_ms": 116.7,
+      "vlm_ms": 408.9,
+      "verify_ms": 54.9,
+      "escalate": false
+    },
+    {
+      "wall_ms": 615.8,
+      "ttft_ms": 296.6,
+      "gate_ms": 74.2,
+      "vlm_ms": 451.2,
+      "verify_ms": 85.6,
+      "escalate": false
+    },
+    {
+      "wall_ms": 643.0,
+      "ttft_ms": 296.3,
+      "gate_ms": 160.3,
+      "vlm_ms": 366.5,
+      "verify_ms": 111.3,
+      "escalate": false
+    },
+    {
+      "wall_ms": 989.1,
+      "ttft_ms": 298.2,
+      "gate_ms": 36.8,
+      "vlm_ms": 891.4,
+      "verify_ms": 56.8,
+      "escalate": false
+    },
+    {
+      "wall_ms": 926.6,
+      "ttft_ms": 225.2,
+      "gate_ms": 152.2,
+      "vlm_ms": 707.2,
+      "verify_ms": 62.6,
+      "escalate": false
+    },
+    {
+      "wall_ms": 970.5,
+      "ttft_ms": 276.4,
+      "gate_ms": 179.0,
+      "vlm_ms": 676.5,
+      "verify_ms": 109.7,
+      "escalate": false
+    },
+    {
+      "wall_ms": 998.3,
+      "ttft_ms": 249.1,
+      "gate_ms": 203.0,
+      "vlm_ms": 627.3,
+      "verify_ms": 166.0,
+      "escalate": false
+    },
+    {
+      "wall_ms": 706.0,
+      "ttft_ms": 136.9,
+      "gate_ms": 103.5,
+      "vlm_ms": 588.0,
+      "verify_ms": 12.3,
+      "escalate": false
+    }
+  ],
+  "route-c8": [
+    {
+      "wall_ms": 56.8,
+      "gate_ms": 54.5,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 97.2,
+      "gate_ms": 92.4,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 133.9,
+      "gate_ms": 129.3,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 170.7,
+      "gate_ms": 166.3,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 210.3,
+      "gate_ms": 205.9,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 249.2,
+      "gate_ms": 244.9,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 287.2,
+      "gate_ms": 282.2,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 323.2,
+      "gate_ms": 319.5,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 305.7,
+      "gate_ms": 303.6,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 301.4,
+      "gate_ms": 298.7,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 301.0,
+      "gate_ms": 298.7,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 301.3,
+      "gate_ms": 298.3,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 299.1,
+      "gate_ms": 296.0,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 294.9,
+      "gate_ms": 293.7,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 295.0,
+      "gate_ms": 292.3,
+      "intent": "refund_request"
+    },
+    {
+      "wall_ms": 294.6,
+      "gate_ms": 293.3,
+      "intent": "refund_request"
+    }
+  ],
+  "chat-c8": [
+    {
+      "wall_ms": 963.7,
+      "ttft_ms": 75.5,
+      "predicted_n": 55,
+      "decode_tok_s": 60.82526366062207
+    },
+    {
+      "wall_ms": 1035.1,
+      "ttft_ms": 74.1,
+      "predicted_n": 58,
+      "decode_tok_s": 59.325562031640295
+    },
+    {
+      "wall_ms": 1076.7,
+      "ttft_ms": 74.2,
+      "predicted_n": 59,
+      "decode_tok_s": 57.884000463072
+    },
+    {
+      "wall_ms": 1185.6,
+      "ttft_ms": 75.9,
+      "predicted_n": 64,
+      "decode_tok_s": 56.76795692123041
+    },
+    {
+      "wall_ms": 1834.2,
+      "ttft_ms": 1075.6,
+      "predicted_n": 44,
+      "decode_tok_s": 56.70556492589374
+    },
+    {
+      "wall_ms": 1885.7,
+      "ttft_ms": 1001.5,
+      "predicted_n": 50,
+      "decode_tok_s": 55.45815795162464
+    },
+    {
+      "wall_ms": 2027.5,
+      "ttft_ms": 1115.2,
+      "predicted_n": 55,
+      "decode_tok_s": 59.20059463708392
+    },
+    {
+      "wall_ms": 2220.0,
+      "ttft_ms": 1227.1,
+      "predicted_n": 64,
+      "decode_tok_s": 63.463473748787386
+    }
+  ],
+  "answer-c8": [
+    {
+      "wall_ms": 870.1,
+      "ttft_ms": 436.6,
+      "gate_ms": 72.7,
+      "vlm_ms": 727.4,
+      "verify_ms": 66.5,
+      "escalate": false
+    },
+    {
+      "wall_ms": 982.7,
+      "ttft_ms": 435.0,
+      "gate_ms": 114.4,
+      "vlm_ms": 834.7,
+      "verify_ms": 31.9,
+      "escalate": false
+    },
+    {
+      "wall_ms": 1014.5,
+      "ttft_ms": 436.6,
+      "gate_ms": 36.6,
+      "vlm_ms": 915.3,
+      "verify_ms": 61.6,
+      "escalate": false
+    },
+    {
+      "wall_ms": 1028.7,
+      "ttft_ms": 436.9,
+      "gate_ms": 156.8,
+      "vlm_ms": 793.2,
+      "verify_ms": 75.0,
+      "escalate": false
+    },
+    {
+      "wall_ms": 1455.1,
+      "ttft_ms": 1077.7,
+      "gate_ms": 287.8,
+      "vlm_ms": 1104.4,
+      "verify_ms": 61.0,
+      "escalate": false
+    },
+    {
+      "wall_ms": 1535.3,
+      "ttft_ms": 832.3,
+      "gate_ms": 198.0,
+      "vlm_ms": 1277.6,
+      "verify_ms": 57.8,
+      "escalate": false
+    },
+    {
+      "wall_ms": 1620.4,
+      "ttft_ms": 1076.8,
+      "gate_ms": 326.5,
+      "vlm_ms": 1240.1,
+      "verify_ms": 52.3,
+      "escalate": false
+    },
+    {
+      "wall_ms": 1671.0,
+      "ttft_ms": 1080.9,
+      "gate_ms": 240.1,
+      "vlm_ms": 1398.3,
+      "verify_ms": 28.5,
+      "escalate": false
+    }
+  ]
+}

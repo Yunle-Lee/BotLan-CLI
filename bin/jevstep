@@ -1,0 +1,451 @@
+#!/usr/bin/env python3
+"""jevstep — talk to the Spark Duo stack from a terminal.
+
+Three modes:
+  pipeline (default)  the full system: Jev routes, GELab-Zero-4B answers from the context you give
+  direct              a plain multi-turn conversation with the StepFun 4B model alone
+  jev                 put a question to Jev itself, with your own options — a verdict, not an answer
+
+  jevstep                                   interactive, pipeline mode
+  jevstep "how much is a Pro seat?"         one-shot
+  jevstep -c policy.md "what is the refund window?"
+  cat doc.md | jevstep -c - "summarise the refund rules"
+  jevstep -m direct                         chat straight with the 4B, history kept
+  jevstep -m jev -o yes,no "is a free tier offered?"
+  jevstep -m agent "which tools does the agent have?"   the 4B works with tools; each call is shown
+
+In the REPL: /mode <pipeline|direct|agent|jev>, /ctx <file>, /opts a,b,c, /img <file>, /force, /quiet,
+/trace, /clear, /history, /quit
+"""
+from __future__ import annotations
+
+import argparse
+import base64
+import json
+import mimetypes
+import os
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+ENDPOINT = os.environ.get("JEVSTEP_ENDPOINT", "http://127.0.0.1:8090")
+BOLD, DIM, RESET = "\033[1m", "\033[2m", "\033[0m"
+RED, GREEN, YELLOW = "\033[31m", "\033[32m", "\033[33m"
+MODES = ("pipeline", "direct", "jev", "agent")
+
+
+def color(s, c):
+    return s if not sys.stdout.isatty() else f"{c}{s}{RESET}"
+
+
+def http(url, payload, timeout=600):
+    req = urllib.request.Request(url, data=json.dumps(payload).encode(),
+                                 headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        raise SystemExit(f"{color('error', RED)} {e.code}: {e.read().decode()[:300]}") from None
+    except urllib.error.URLError as e:
+        raise SystemExit(f"{color('cannot reach', RED)} {url} — {e.reason}\n"
+                         f"start the stack with: sh ~/spark-duo/scripts/04_serve.sh") from None
+
+
+def get(path, timeout=15):
+    try:
+        with urllib.request.urlopen(ENDPOINT + path, timeout=timeout) as r:
+            return json.loads(r.read())
+    except urllib.error.URLError as e:
+        raise SystemExit(f"{color('cannot reach', RED)} {ENDPOINT} — {e.reason}\n"
+                         f"start the stack with: sh ~/spark-duo/scripts/04_serve.sh") from None
+
+
+def vlm_base():
+    return get("/health").get("vlm", "http://127.0.0.1:8080")
+
+
+def sampling_defaults():
+    """Take the sampling settings from the running stack so both paths behave the same."""
+    try:
+        return get("/health").get("sampling", {}) or {}
+    except SystemExit:
+        return {}
+
+
+def sse(url, payload, timeout=900):
+    """Yield (event_name_or_None, parsed_json) from a text/event-stream response."""
+    req = urllib.request.Request(url, data=json.dumps(payload).encode(),
+                                 headers={"Content-Type": "application/json",
+                                          "Accept": "text/event-stream"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            event = None
+            for raw in r:
+                line = raw.decode("utf-8", "replace").rstrip("\n")
+                if line.startswith("event: "):
+                    event = line[7:]
+                elif line.startswith("data: "):
+                    body = line[6:]
+                    if body == "[DONE]":
+                        return
+                    try:
+                        yield event, json.loads(body)
+                    except json.JSONDecodeError:
+                        continue
+                elif line.startswith("{"):
+                    # A mid-stream failure can arrive as a bare JSON body: the orchestrator writes a
+                    # 500 into an already-open stream when stage 1 raises (an over-budget state, for
+                    # one). Surface it as an error event instead of dropping it on the floor.
+                    try:
+                        obj = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if isinstance(obj, dict) and "error" in obj:
+                        yield "error", obj
+    except urllib.error.HTTPError as e:
+        raise SystemExit(f"{color('error', RED)} {e.code}: {e.read().decode()[:300]}") from None
+    except urllib.error.URLError as e:
+        raise SystemExit(f"{color('cannot reach', RED)} {url} — {e.reason}\n"
+                         f"start the stack with: sh ~/spark-duo/scripts/04_serve.sh") from None
+
+
+def raise_on_error(event, data):
+    """SSE errors are events, not HTTP errors: fail the same way http() does instead of going quiet."""
+    if event == "error":
+        msg = data.get("error") if isinstance(data, dict) else data
+        raise SystemExit(f"{color('error', RED)} {msg}")
+
+
+def image_data_url(path):
+    p = Path(path).expanduser()
+    if not p.is_file():
+        raise SystemExit(f"no such image: {p}")
+    mime = mimetypes.guess_type(p.name)[0] or "image/png"
+    return f"data:{mime};base64," + base64.b64encode(p.read_bytes()).decode()
+
+
+def show_pipeline(res, trace, quiet):
+    if trace and not quiet:
+        print(color(f"  gate: {res.get('intent')} {res.get('confidence', 0):.2f} -> {res.get('route')}"
+                    + ("  [ESCALATED]" if res.get("escalate") else ""),
+                    YELLOW if res.get("escalate") else DIM))
+    print(res.get("answer", "").strip())
+    if trace and not quiet:
+        st = res.get("stages", {})
+        bits = " ".join(f"{k[:-3]}={v:.0f}ms" for k, v in st.items() if k.endswith("_ms"))
+        if res.get("reason"):
+            bits += f"  ({res['reason']})"
+        print(color("  " + bits, DIM))
+
+
+class Session:
+    def __init__(self, mode, context="", image=None, force=False, trace=True, quiet=False,
+                 options=None, system=None, stream=True):
+        self.mode, self.context, self.image = mode, context, image
+        self.force, self.trace, self.quiet = force, trace, quiet
+        self.stream = stream
+        self.options = options or ["yes", "no"]
+        self.system = system or os.environ.get(
+            "JEVSTEP_SYSTEM", "You are a helpful assistant. Be accurate and concise.")
+        self.messages = [{"role": "system", "content": self.system}]
+        self._vlm = None
+        self.sampling = sampling_defaults()
+
+    # -- the three modes -------------------------------------------------------------------
+    def pipeline(self, question):
+        payload = {"state": self.context, "question": question, "image": self.image, "force": self.force}
+        self.image = None
+        if not self.stream:
+            res = http(ENDPOINT + "/answer", payload)
+            show_pipeline(res, self.trace, self.quiet)
+            return res
+
+        streamed, out, finished = False, {}, False
+        for event, data in sse(ENDPOINT + "/answer/stream", payload):
+            raise_on_error(event, data)
+            if event == "gate" and self.trace and not self.quiet:
+                # the live gate line only works where a carriage return can erase it
+                if sys.stdout.isatty():
+                    print(color(f"  gate: {data['intent']} {data['confidence']:.2f} -> {data['branch']}",
+                                DIM), end="\r")
+                continue
+            if event == "delta":
+                if self.trace and not self.quiet and not streamed and sys.stdout.isatty():
+                    print(" " * 72, end="\r")     # wipe the gate line before the answer
+                print(data["text"], end="", flush=True)
+                streamed = True
+            elif event == "done":
+                out, finished = data, True
+        if not finished:
+            raise SystemExit(f"{color('error', RED)} the stream ended without an answer "
+                             f"— check ~/spark-duo/logs/orchestrator.log")
+        if streamed:
+            print()
+        else:
+            print(out.get("answer", "").strip())
+        if self.trace and not self.quiet:
+            st = out.get("stages", {})
+            bits = " ".join(f"{k[:-3]}={v:.0f}ms" for k, v in st.items() if k.endswith("_ms"))
+            if out.get("decode_tok_s"):
+                bits += f" decode={out['decode_tok_s']:.1f} tok/s"
+            if out.get("reason"):
+                bits += f"  ({out['reason']})"
+            print(color(f"  gate: {out.get('intent')} -> {out.get('route')}"
+                        + ("  [ESCALATED]" if out.get("escalate") else "") + "   " + bits,
+                        YELLOW if out.get("escalate") else DIM))
+        return out
+
+    def direct(self, question):
+        if self._vlm is None:
+            self._vlm = vlm_base()
+        content = question
+        if self.image:
+            self.messages.append({"role": "user", "content": [
+                {"type": "text", "text": question},
+                {"type": "image_url", "image_url": {"url": self.image}}]})
+            self.image = None
+        else:
+            self.messages.append({"role": "user", "content": content})
+        if self.stream:
+            # through the orchestrator so the loop guard applies to direct chat too
+            reply, timings, cut, finished = "", {}, False, False
+            for ev, d in sse(ENDPOINT + "/chat/stream",
+                             {"messages": self.messages, "max_tokens": 2048, "temperature": 0.6}):
+                raise_on_error(ev, d)
+                if ev == "delta":
+                    reply += d["text"]
+                    print(d["text"], end="", flush=True)
+                elif ev == "done":
+                    timings, cut, finished = d.get("timings") or {}, d.get("loop_cut"), True
+            print()
+            if not finished:
+                if not reply:
+                    raise SystemExit(f"{color('error', RED)} the stream ended without a reply "
+                                     f"— check ~/spark-duo/logs/orchestrator.log")
+                print(color("  (the stream ended early)", RED), file=sys.stderr)
+            if cut and self.trace and not self.quiet:
+                print(color("  (stopped: the model started repeating itself)", DIM))
+        else:
+            res = http(self._vlm + "/v1/chat/completions",
+                       {"messages": self.messages, "max_tokens": 2048, "temperature": 0.6,
+                        **self.sampling})
+            reply = res["choices"][0]["message"]["content"]
+            timings = res.get("timings") or {}
+            print(reply.strip())
+        self.messages.append({"role": "assistant", "content": reply})
+        if self.trace and not self.quiet:
+            print(color(f"  turns={len(self.messages)//2} decode={timings.get('predicted_per_second', 0):.1f} tok/s",
+                        DIM))
+        return {"reply": reply, "timings": timings}
+
+    def jev(self, question):
+        res = http(ENDPOINT + "/decide", {"state": self.context, "question": question,
+                                          "options": {o: None for o in self.options}})
+        if self.quiet:
+            print(res["verdict"])
+        else:
+            probs = " ".join(f"{k}={v:.3f}" for k, v in
+                             sorted(res["probabilities"].items(), key=lambda x: -x[1]))
+            print(color(f"  verdict: {BOLD}{res['verdict']}{RESET}  p={res['confidence']:.3f}", GREEN))
+            print(f"  {probs}")
+            print(color(f"  scores={res.get('scores')}  T={res['temperature']:.3f}"
+                        f"  calibrated={res['calibrated']} ({res['calibration_key']})  {res['ms']:.0f}ms", DIM))
+        return res
+
+    def agent(self, question):
+        """The agent tier: Jev routes, the 4B works with tools, and every call is printed as it runs."""
+        if not self.stream:
+            res = http(ENDPOINT + "/agent", {"question": question, "state": self.context,
+                                              "image": self.image})
+            self.image = None
+            self.show_agent(res)
+            return res
+        out, streamed, finished = {}, False, False
+        payload = {"question": question, "state": self.context, "image": self.image}
+        self.image = None
+        for event, data in sse(ENDPOINT + "/agent/stream", payload):
+            raise_on_error(event, data)
+            if event == "gate" and self.trace and not self.quiet:
+                print(color(f"  gate: {data['intent']} {data['confidence']:.2f} -> {data['branch']}"
+                            + ("  [needs a lookup]" if data.get("needs_lookup") else ""), DIM))
+            elif event == "tool_call" and self.trace and not self.quiet:
+                args = json.dumps(data.get("arguments") or {}, ensure_ascii=False)
+                print(color(f"  · {data.get('name')} {args[:90]}", DIM), flush=True)
+            elif event == "tool_result" and self.trace and not self.quiet:
+                mark = "ok " if data.get("ok") else "ERR"
+                tail = data.get("error") or f"{data.get('bytes', 0)}b"
+                print(color(f"      {mark} {data.get('ms', 0):.0f}ms  {tail}", DIM), flush=True)
+            elif event == "delta":
+                print(data["text"], end="", flush=True)
+                streamed = True
+            elif event == "done":
+                out, finished = data, True
+        print()
+        if not finished:
+            if not streamed:
+                raise SystemExit(f"{color('error', RED)} the agent stream ended without an answer "
+                                 f"— check ~/spark-duo/logs/orchestrator.log")
+            print(color("  (the agent stream ended early)", RED), file=sys.stderr)
+            return out
+        if not streamed:
+            print(out.get("answer", "").strip())
+        if self.trace and not self.quiet:
+            self.show_agent(out, shown=True)
+        return out
+
+    def show_agent(self, res, shown=False):
+        """The agent's trace line: what it stopped on, whether anything grounded the answer."""
+        if not shown:
+            print(res.get("answer", "").strip())
+        if not self.trace or self.quiet:
+            return
+        st = res.get("stages", {})
+        bits = " ".join(f"{k[:-3]}={v:.0f}ms" for k, v in st.items() if k.endswith("_ms"))
+        flags = [f"stop={res.get('stop_reason')}", f"tools={res.get('tool_calls', 0)}",
+                 f"grounded={res.get('grounded')}"]
+        if res.get("insufficient"):
+            flags.append("insufficient")
+        if res.get("escalate"):
+            flags.append("ESCALATED")
+        if res.get("reason"):
+            flags.append(f"({res['reason']})")
+        print(color("  " + "  ".join(flags) + ("   " + bits if bits else ""),
+                    YELLOW if res.get("escalate") else DIM))
+
+    def ask(self, question):
+        return {"pipeline": self.pipeline, "direct": self.direct, "jev": self.jev,
+                "agent": self.agent}[self.mode](question)
+
+    # -- repl ------------------------------------------------------------------------------
+    def repl(self):
+        try:
+            import readline  # noqa: F401
+        except ImportError:
+            pass
+        banner = {"direct": "chat — StepFun GELab-Zero-4B, 4B, local",
+                  "pipeline": "pipeline — Jev routes, the 4B answers from your context",
+                  "agent": "agent — Jev routes, the 4B works with tools (each call shown)",
+                  "jev": "jev — verdicts from the 0.8B decision model"}[self.mode]
+        print(color(f"jevstep · {banner}", BOLD))
+        print(color("  /help for commands · /quit to leave", DIM))
+        while True:
+            try:
+                if self.mode == "direct":
+                    tag = ""
+                else:
+                    tag = f"[{self.mode}" + (f" ctx{len(self.context)}c]" if self.context else "]") + " "
+                line = input(color(f"{tag}> ", GREEN)).strip()
+            except (EOFError, KeyboardInterrupt):
+                print()
+                return
+            if not line:
+                continue
+            if line in ("/quit", "/exit", "/q"):
+                return
+            if line.startswith("/mode"):
+                arg = line[5:].strip()
+                if arg in MODES:
+                    self.mode = arg
+                    self._vlm = None if arg == "direct" else self._vlm
+                    print(color(f"  mode = {arg}", DIM))
+                else:
+                    print(color(f"  modes: {', '.join(MODES)}", DIM))
+                continue
+            if line in ("/help", "/?", "/h"):
+                print(color("  /mode <direct|pipeline|agent|jev>   switch what you are talking to", DIM))
+                print(color("  /ctx <file>   pipeline: the state it must answer from (direct: system note)", DIM))
+                print(color("  /opts a,b,c   jev: the options it scores     /img <file>  attach an image", DIM))
+                print(color("  /force        pipeline: answer even when the gate is unsure", DIM))
+                print(color("  /quiet /trace toggle output detail    /history  the transcript", DIM))
+                print(color("  /clear        drop context and history      /quit  leave", DIM))
+                continue
+            if line == "/history":
+                for m in self.messages[1:]:
+                    body = m["content"] if isinstance(m["content"], str) else "(image + text)"
+                    print(color(f"  {m['role']}: {body[:120]}", DIM))
+                continue
+            if line.startswith("/opts"):
+                arg = line[5:].strip()
+                if arg:
+                    self.options = [o.strip() for o in arg.split(",") if o.strip()]
+                print(color(f"  options = {self.options}", DIM)); continue
+            if line == "/clear":
+                self.context, self.image = "", None
+                self.messages = [{"role": "system", "content": self.system}]
+                print(color("  cleared", DIM)); continue
+            if line == "/force":
+                self.force = not self.force; print(color(f"  force = {self.force}", DIM)); continue
+            if line == "/quiet":
+                self.quiet = not self.quiet; print(color(f"  quiet = {self.quiet}", DIM)); continue
+            if line == "/trace":
+                self.trace = not self.trace; print(color(f"  trace = {self.trace}", DIM)); continue
+            if line == "/ctx" or line.startswith("/ctx "):
+                arg = line[5:].strip()
+                if not arg:
+                    print(color(f"  {len(self.context)} chars", DIM))
+                    print("  " + (self.context[:400] or "(empty)")); continue
+                try:
+                    self.context = sys.stdin.read() if arg == "-" else Path(arg).expanduser().read_text()
+                except OSError as e:
+                    print(color(f"  cannot read {arg}: {e.strerror or e}", RED)); continue
+                if self.mode == "direct":            # in a conversation, context is a system note
+                    self.messages[0] = {"role": "system", "content": self.system + "\n\n" + self.context}
+                print(color(f"  context loaded: {len(self.context)} chars from {arg}", DIM)); continue
+            if line.startswith("/img"):
+                arg = line[4:].strip()
+                try:
+                    self.image = image_data_url(arg) if arg else None
+                except SystemExit as e:
+                    print(color(f"  {e}", RED)); continue
+                print(color(f"  image {'attached: ' + arg if arg else 'cleared'}", DIM)); continue
+            if line.startswith("/"):
+                print(color("  /mode /ctx /opts /img /force /quiet /trace /clear /history /quit", DIM)); continue
+            try:
+                self.ask(line)
+            except KeyboardInterrupt:
+                print(color("\n  interrupted", YELLOW))
+
+
+def main():
+    ap = argparse.ArgumentParser(description="talk to the Spark Duo stack")
+    ap.add_argument("question", nargs="*", help="one-shot question (omit for interactive)")
+    ap.add_argument("-m", "--mode", choices=MODES, default=os.environ.get("JEVSTEP_MODE"))
+    ap.add_argument("-c", "--context", help="context file, or - for stdin (pipeline: the state)")
+    ap.add_argument("-o", "--options", help="jev mode: comma-separated options (default yes,no)")
+    ap.add_argument("-i", "--image", help="image file to attach")
+    ap.add_argument("-f", "--force", action="store_true", help="pipeline: answer even when the gate is unsure")
+    ap.add_argument("-q", "--quiet", action="store_true", help="print only the answer")
+    ap.add_argument("--no-trace", action="store_true", help="hide routing and timings")
+    ap.add_argument("--no-stream", action="store_true", help="wait for the full reply instead of streaming")
+    a = ap.parse_args()
+
+    context = ""
+    if a.context:
+        if a.context == "-":
+            context = sys.stdin.read()
+        else:
+            try:
+                context = Path(a.context).expanduser().read_text()
+            except OSError as e:
+                raise SystemExit(f"{color('cannot read', RED)} {a.context}: {e.strerror or e}") from None
+    # bare `jevstep` is a chat box; handing it a context file means you want grounded answers
+    mode = a.mode or ("pipeline" if context else "direct")
+    if mode not in MODES:
+        raise SystemExit(f"unknown mode {mode!r}: JEVSTEP_MODE must be one of {', '.join(MODES)}")
+    s = Session(mode, context, image_data_url(a.image) if a.image else None, a.force,
+                not a.no_trace, a.quiet,
+                [o.strip() for o in a.options.split(",")] if a.options else None,
+                stream=not a.no_stream)
+    if a.question:
+        try:
+            s.ask(" ".join(a.question))
+        except KeyboardInterrupt:
+            print()
+            raise SystemExit(130) from None
+    else:
+        s.repl()
+
+
+if __name__ == "__main__":
+    main()

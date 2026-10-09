@@ -1,0 +1,63 @@
+{
+  "when": "2026-10-09T15:23:11.794",
+  "kernel": "Linux spark-8691 6.17.0-1008-nvidia #8-Ubuntu SMP PREEMPT_DYNAMIC Wed Jan 21 17:56:56 UTC 2026 aarch64 aarch64 aarch64 GNU/Linux",
+  "gpu": "NVIDIA GB10, 580.126.09, 12.1, [N/A]",
+  "cuda": "Build cuda_12.9.r12.9/compiler.36037853_0",
+  "pids": {
+    "llama-server": "1080075",
+    "orchestrator": "1592695",
+    "jev-score": "1592720"
+  },
+  "llama_props": {
+    "build_info": "b1-441df11",
+    "total_slots": 4,
+    "model_path": "/home/user1/spark-duo/models/gelab-zero-4b-Q4_K_M.gguf"
+  },
+  "n_ctx": 32768,
+  "jevs": "/home/user1/spark-duo/bin/jev-score --model /home/user1/models/Jev-Style-0.8B-Decision-v3-GGUF/Jev-Style-0.8B-Decision-v3-Q4_K_M.gguf --n-ctx 32768 --n-ubatch 1024 --ngl 999 --flash-attn auto --n-seq-max 17 --n-outputs-max 256",
+  "config": {
+    "intents": [
+      "refund_request",
+      "subscription_billing",
+      "service_level",
+      "record_lookup",
+      "account_lifecycle",
+      "security_abuse",
+      "technical_issue",
+      "policy_question",
+      "data_privacy",
+      "sales_enquiry",
+      "creative_or_chat",
+      "other_support"
+    ],
+    "branches": [
+      "answer_from_state",
+      "needs_lookup",
+      "safety_review",
+      "off_topic"
+    ],
+    "vlm": "http://127.0.0.1:8080",
+    "jev": "/home/user1/models/Jev-Style-0.8B-Decision-v3-GGUF",
+    "sampling": {
+      "repeat_penalty": 1.1,
+      "repeat_last_n": 256,
+      "top_p": 0.9
+    },
+    "agent": {
+      "root": "/home/user1/spark-duo",
+      "tools": [
+        "glob",
+        "grep",
+        "http_fetch",
+        "list_dir",
+        "read_file",
+        "write_file"
+      ],
+      "max_bytes": 60000,
+      "timeout_s": 30,
+      "allow_shell": false,
+      "allow_write": true,
+      "require_approval": true
+    }
+  }
+}

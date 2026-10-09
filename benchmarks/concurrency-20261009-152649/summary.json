@@ -1,0 +1,350 @@
+{
+  "route-c1": {
+    "scenario": "route",
+    "concurrency": 1,
+    "requests": 16,
+    "wall_s": 0.62,
+    "throughput_rps": 25.68,
+    "lat": {
+      "n": 16,
+      "min": 36.2,
+      "p50": 38.2,
+      "p90": 41.3,
+      "p95": 41.3,
+      "max": 52.3,
+      "mean": 38.888,
+      "stdev": 3.828
+    },
+    "errors": [],
+    "resources": {
+      "gpu_util_max": 0.0,
+      "gpu_util_mean": 0.0,
+      "power_max_w": 12.8,
+      "temp_max_c": 49.0,
+      "mem_available_min_gb": 82.55,
+      "samples": 2,
+      "llama-server_gpu_mib_max": 8749.0,
+      "jev-score_gpu_mib_max": 1705.0,
+      "gpu_mib_total_max": 10454.0
+    }
+  },
+  "chat-c1": {
+    "scenario": "chat-stream",
+    "concurrency": 1,
+    "requests": 8,
+    "wall_s": 5.59,
+    "throughput_rps": 1.43,
+    "lat": {
+      "n": 8,
+      "min": 552.6,
+      "p50": 728.0,
+      "p90": 748.7,
+      "p95": 853.9,
+      "max": 853.9,
+      "mean": 698.513,
+      "stdev": 93.419
+    },
+    "errors": [],
+    "resources": {
+      "gpu_util_max": 90.0,
+      "gpu_util_mean": 85.9,
+      "power_max_w": 55.06,
+      "temp_max_c": 56.0,
+      "mem_available_min_gb": 82.43,
+      "samples": 10,
+      "llama-server_gpu_mib_max": 8749.0,
+      "jev-score_gpu_mib_max": 1705.0,
+      "gpu_mib_total_max": 10454.0
+    }
+  },
+  "answer-c1": {
+    "scenario": "answer-stream",
+    "concurrency": 1,
+    "requests": 8,
+    "wall_s": 3.16,
+    "throughput_rps": 2.54,
+    "lat": {
+      "n": 8,
+      "min": 290.0,
+      "p50": 398.8,
+      "p90": 488.8,
+      "p95": 494.5,
+      "max": 494.5,
+      "mean": 394.337,
+      "stdev": 84.672
+    },
+    "errors": [],
+    "resources": {
+      "gpu_util_max": 91.0,
+      "gpu_util_mean": 88.0,
+      "power_max_w": 46.12,
+      "temp_max_c": 57.0,
+      "mem_available_min_gb": 82.63,
+      "samples": 6,
+      "llama-server_gpu_mib_max": 8749.0,
+      "jev-score_gpu_mib_max": 1705.0,
+      "gpu_mib_total_max": 10454.0
+    }
+  },
+  "route-c2": {
+    "scenario": "route",
+    "concurrency": 2,
+    "requests": 16,
+    "wall_s": 0.61,
+    "throughput_rps": 26.09,
+    "lat": {
+      "n": 16,
+      "min": 57.0,
+      "p50": 73.7,
+      "p90": 77.7,
+      "p95": 77.7,
+      "max": 96.0,
+      "mean": 74.181,
+      "stdev": 7.32
+    },
+    "errors": [],
+    "resources": {
+      "gpu_util_max": 84.0,
+      "gpu_util_mean": 84.0,
+      "power_max_w": 45.26,
+      "temp_max_c": 57.0,
+      "mem_available_min_gb": 82.69,
+      "samples": 1,
+      "llama-server_gpu_mib_max": 8749.0,
+      "jev-score_gpu_mib_max": 1705.0,
+      "gpu_mib_total_max": 10454.0
+    }
+  },
+  "chat-c2": {
+    "scenario": "chat-stream",
+    "concurrency": 2,
+    "requests": 8,
+    "wall_s": 3.44,
+    "throughput_rps": 2.32,
+    "lat": {
+      "n": 8,
+      "min": 687.3,
+      "p50": 932.4,
+      "p90": 979.1,
+      "p95": 1004.2,
+      "max": 1004.2,
+      "mean": 848.987,
+      "stdev": 132.455
+    },
+    "errors": [],
+    "resources": {
+      "gpu_util_max": 87.0,
+      "gpu_util_mean": 86.2,
+      "power_max_w": 56.86,
+      "temp_max_c": 60.0,
+      "mem_available_min_gb": 82.68,
+      "samples": 6,
+      "llama-server_gpu_mib_max": 8749.0,
+      "jev-score_gpu_mib_max": 1705.0,
+      "gpu_mib_total_max": 10454.0
+    }
+  },
+  "answer-c2": {
+    "scenario": "answer-stream",
+    "concurrency": 2,
+    "requests": 8,
+    "wall_s": 2.5,
+    "throughput_rps": 3.2,
+    "lat": {
+      "n": 8,
+      "min": 396.5,
+      "p50": 696.5,
+      "p90": 708.2,
+      "p95": 709.2,
+      "max": 709.2,
+      "mean": 616.038,
+      "stdev": 126.025
+    },
+    "errors": [],
+    "resources": {
+      "gpu_util_max": 93.0,
+      "gpu_util_mean": 88.4,
+      "power_max_w": 50.69,
+      "temp_max_c": 60.0,
+      "mem_available_min_gb": 82.66,
+      "samples": 5,
+      "llama-server_gpu_mib_max": 8749.0,
+      "jev-score_gpu_mib_max": 1705.0,
+      "gpu_mib_total_max": 10454.0
+    }
+  },
+  "route-c4": {
+    "scenario": "route",
+    "concurrency": 4,
+    "requests": 16,
+    "wall_s": 0.62,
+    "throughput_rps": 25.75,
+    "lat": {
+      "n": 16,
+      "min": 56.5,
+      "p50": 149.7,
+      "p90": 153.4,
+      "p95": 153.4,
+      "max": 171.2,
+      "mean": 141.219,
+      "stdev": 27.15
+    },
+    "errors": [],
+    "resources": {
+      "gpu_util_max": 93.0,
+      "gpu_util_mean": 93.0,
+      "power_max_w": 50.69,
+      "temp_max_c": 61.0,
+      "mem_available_min_gb": 82.65,
+      "samples": 2,
+      "llama-server_gpu_mib_max": 8749.0,
+      "jev-score_gpu_mib_max": 1705.0,
+      "gpu_mib_total_max": 10454.0
+    }
+  },
+  "chat-c4": {
+    "scenario": "chat-stream",
+    "concurrency": 4,
+    "requests": 8,
+    "wall_s": 1.92,
+    "throughput_rps": 4.16,
+    "lat": {
+      "n": 8,
+      "min": 674.8,
+      "p50": 856.6,
+      "p90": 943.9,
+      "p95": 1065.8,
+      "max": 1065.8,
+      "mean": 865.138,
+      "stdev": 118.214
+    },
+    "errors": [],
+    "resources": {
+      "gpu_util_max": 93.0,
+      "gpu_util_mean": 87.0,
+      "power_max_w": 62.32,
+      "temp_max_c": 62.0,
+      "mem_available_min_gb": 82.65,
+      "samples": 4,
+      "llama-server_gpu_mib_max": 8749.0,
+      "jev-score_gpu_mib_max": 1705.0,
+      "gpu_mib_total_max": 10454.0
+    }
+  },
+  "answer-c4": {
+    "scenario": "answer-stream",
+    "concurrency": 4,
+    "requests": 8,
+    "wall_s": 1.7,
+    "throughput_rps": 4.72,
+    "lat": {
+      "n": 8,
+      "min": 585.1,
+      "p50": 926.6,
+      "p90": 989.1,
+      "p95": 998.3,
+      "max": 998.3,
+      "mean": 804.3,
+      "stdev": 182.69
+    },
+    "errors": [],
+    "resources": {
+      "gpu_util_max": 89.0,
+      "gpu_util_mean": 84.0,
+      "power_max_w": 54.93,
+      "temp_max_c": 62.0,
+      "mem_available_min_gb": 82.65,
+      "samples": 4,
+      "llama-server_gpu_mib_max": 8749.0,
+      "jev-score_gpu_mib_max": 1705.0,
+      "gpu_mib_total_max": 10454.0
+    }
+  },
+  "route-c8": {
+    "scenario": "route",
+    "concurrency": 8,
+    "requests": 16,
+    "wall_s": 0.62,
+    "throughput_rps": 25.75,
+    "lat": {
+      "n": 16,
+      "min": 56.8,
+      "p50": 294.9,
+      "p90": 305.7,
+      "p95": 305.7,
+      "max": 323.2,
+      "mean": 245.094,
+      "stdev": 84.772
+    },
+    "errors": [],
+    "resources": {
+      "gpu_util_max": 89.0,
+      "gpu_util_mean": 89.0,
+      "power_max_w": 55.76,
+      "temp_max_c": 61.0,
+      "mem_available_min_gb": 82.6,
+      "samples": 2,
+      "llama-server_gpu_mib_max": 8749.0,
+      "jev-score_gpu_mib_max": 1705.0,
+      "gpu_mib_total_max": 10454.0
+    }
+  },
+  "chat-c8": {
+    "scenario": "chat-stream",
+    "concurrency": 8,
+    "requests": 8,
+    "wall_s": 2.22,
+    "throughput_rps": 3.6,
+    "lat": {
+      "n": 8,
+      "min": 963.7,
+      "p50": 1834.2,
+      "p90": 2027.5,
+      "p95": 2220.0,
+      "max": 2220.0,
+      "mean": 1528.562,
+      "stdev": 511.631
+    },
+    "errors": [],
+    "resources": {
+      "gpu_util_max": 89.0,
+      "gpu_util_mean": 82.2,
+      "power_max_w": 59.51,
+      "temp_max_c": 63.0,
+      "mem_available_min_gb": 82.6,
+      "samples": 5,
+      "llama-server_gpu_mib_max": 8749.0,
+      "jev-score_gpu_mib_max": 1705.0,
+      "gpu_mib_total_max": 10454.0
+    }
+  },
+  "answer-c8": {
+    "scenario": "answer-stream",
+    "concurrency": 8,
+    "requests": 8,
+    "wall_s": 1.67,
+    "throughput_rps": 4.78,
+    "lat": {
+      "n": 8,
+      "min": 870.1,
+      "p50": 1455.1,
+      "p90": 1620.4,
+      "p95": 1671.0,
+      "max": 1671.0,
+      "mean": 1272.225,
+      "stdev": 328.232
+    },
+    "errors": [],
+    "resources": {
+      "gpu_util_max": 83.0,
+      "gpu_util_mean": 81.0,
+      "power_max_w": 58.36,
+      "temp_max_c": 63.0,
+      "mem_available_min_gb": 82.61,
+      "samples": 4,
+      "llama-server_gpu_mib_max": 8749.0,
+      "jev-score_gpu_mib_max": 1705.0,
+      "gpu_mib_total_max": 10454.0
+    }
+  }
+}

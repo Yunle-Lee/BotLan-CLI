@@ -1,0 +1,10 @@
+models/
+.venv/
+logs/
+lc-cuda/
+.empryo/
+.soulforge/
+__pycache__/
+*.pyc
+*.pid
+*.gguf

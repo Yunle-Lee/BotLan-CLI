@@ -1,0 +1,22 @@
+#!/bin/sh
+# The jevstep agent window. Resolves through symlinks so it works from PATH, then runs the Textual
+# app in the project venv (the only dependency the window adds is textual).
+set -eu
+SELF=$0
+if command -v readlink >/dev/null 2>&1; then
+  RESOLVED=$(readlink -f "$SELF" 2>/dev/null || true)
+  [ -n "$RESOLVED" ] && SELF=$RESOLVED
+fi
+ROOT=$(cd "$(dirname "$SELF")/.." && pwd)
+VENV=${VENV:-$ROOT/.venv}
+PY=${JEVSTEP_WINDOW_PY:-$VENV/bin/python}
+
+if [ ! -x "$PY" ]; then
+  echo "no interpreter at $PY - run: sh $ROOT/scripts/06_install_window.sh" >&2
+  exit 1
+fi
+if ! "$PY" -c 'import textual' 2>/dev/null; then
+  echo "textual is missing - run: sh $ROOT/scripts/06_install_window.sh" >&2
+  exit 1
+fi
+exec "$PY" "$ROOT/tui/app.py" "$@"
