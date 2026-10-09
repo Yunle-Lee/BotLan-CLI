@@ -21,6 +21,8 @@ request（state 最长 25,600 tokens，可选带一张图片）
    │
    └─ stage 3 · 可选的 Jev NLI 检查：答案是否被上下文矛盾？
 ```
+<img width="1057" height="892" alt="image" src="https://github.com/user-attachments/assets/5ebb87bc-d62f-4ce5-944b-c536537883f9" />
+
 
 ## 完整调用树
 
