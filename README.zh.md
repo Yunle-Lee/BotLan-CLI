@@ -89,14 +89,15 @@ curl -s -H "Authorization: Bearer $(cat ~/.spark-duo/botlan.key)" localhost:8091
 | `SHA256SUMS` | 以上所有文件的校验和 | |
 
 ```sh
-# 在 Spark 上插好 U 盘（exFAT 会挂载到 /media/$USER/<卷标>）
+# 在 Spark 上插好 U 盘。桌面登录时会自动挂载到 /media/$USER/<卷标>；
+# 只用 SSH 时要自己挂载：lsblk -f  →  udisksctl mount -b /dev/sdX1
 tar -C ~ -xf /media/$USER/Ventoy/BotLan/BotLan-CLI-src.tar && mv ~/BotLan-CLI ~/spark-duo
 cd ~/spark-duo
 sh scripts/00_offline_install.sh /media/$USER/Ventoy/BotLan   # 校验、解包、安装、启动（约 5 分钟）
 sh scripts/09_setup.sh                                  # 建第一个 Bot
 ```
 
-这些程序只能在同样的平台上运行（aarch64、CUDA 13.0 运行库）；其他机器请用上面的逐步安装。程序是在 `/home/user1` 下链接的，换了用户名时脚本会自动设置 `LD_LIBRARY_PATH`（保存在 `.botlan-env`，`04_serve.sh` 会读取）。
+这些程序只能在同样的平台上运行（aarch64、CUDA 13.0 运行库）；其他机器请用上面的逐步安装。程序通过 `$ORIGIN` 从自己所在的目录加载库，所以用户名和安装路径都不影响；只有 CUDA 13 运行库来自系统，脚本会自己找（`CUDA_HOME`、`/usr/local/cuda*` 或系统库路径），并记录在 `.botlan-env` 里。退出登录后服务会停，除非先执行一次 `sudo loginctl enable-linger $USER`。
 
 ## 完整调用树
 
@@ -214,7 +215,7 @@ benchmarks/                  实测数据：单流与并发（REPORT.md、raw.js
 | NVIDIA GB10（DGX Spark）— sm_121，约 121 GB 统一内存 | driver 580.126.09 | 两个模型都跑在 GPU 上 |
 | CUDA toolkit | 13.0 位于 `/usr/local/cuda-13.0`（`nvcc`） | 构建 llama.cpp + jev-score |
 | llama.cpp checkout | `git clone https://github.com/ggml-org/llama.cpp`，commit `441df11f65ea0b6d0c72965aaf70c8241070ddcb` | 运行时 + GGUF 转换 |
-| Python | 3.13（系统 `python3`） | orchestrator、`jevstep`、评测 |
+| Python | 3.12（系统 `python3`，Ubuntu 24.04） | orchestrator、`jevstep`、评测 |
 | Python 运行时依赖 | `pip install tokenizers numpy`（Jev 模型自带 `requirements.txt`） | orchestrator 内的 Jev GGUF 运行时 |
 | Python 转换依赖 | `torch`、`transformers`、`sentencepiece` + `llama.cpp/gguf-py` —— 脚本 03 自建 `.venv` | 仅第 03 步 |
 | Python 窗口依赖 | `textual` —— 脚本 06 装进项目 venv | 仅 `jevstep-window` |

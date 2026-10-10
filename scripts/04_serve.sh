@@ -2,8 +2,9 @@
 # Start the whole system: stage 2 (llama-server, VLM) then the orchestrator.
 # Both models end up resident in the GB10 unified memory pool at the same time.
 set -eu
-# Written by 00_offline_install.sh when the prebuilt binaries came from another account.
-[ -f "$HOME/spark-duo/.botlan-env" ] && . "$HOME/spark-duo/.botlan-env"
+# Written by 00_offline_install.sh: where the CUDA runtime lives for the prebuilt binaries.
+_REPO=$(cd "$(dirname "$0")/.." && pwd)
+[ -f "$_REPO/.botlan-env" ] && . "$_REPO/.botlan-env"
 LC=${1:-$HOME/llama.cpp}
 BIN=${BIN:-$LC/build-cuda/bin}
 MODELS=${MODELS:-$HOME/spark-duo/models}

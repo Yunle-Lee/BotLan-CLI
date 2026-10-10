@@ -102,7 +102,8 @@ download, made on a DGX Spark (DGX OS / Ubuntu 24.04 aarch64, CUDA 13.0):
 | `SHA256SUMS` | checksums of all of the above | |
 
 ```sh
-# on the Spark, with the stick plugged in (exFAT mounts under /media/$USER/<label>)
+# on the Spark, with the stick plugged in. A desktop session mounts it under /media/$USER/<label>;
+# over SSH mount it yourself: lsblk -f  →  udisksctl mount -b /dev/sdX1
 tar -C ~ -xf /media/$USER/Ventoy/BotLan/BotLan-CLI-src.tar && mv ~/BotLan-CLI ~/spark-duo
 cd ~/spark-duo
 sh scripts/00_offline_install.sh /media/$USER/Ventoy/BotLan   # verify, unpack, install, start (about 5 min)
@@ -110,8 +111,10 @@ sh scripts/09_setup.sh                                  # first Bot
 ```
 
 The binaries only run on the same platform (aarch64, CUDA 13.0 runtime). On anything else, use the
-step-by-step install above. They were linked under `/home/user1`; on another account the script
-sets `LD_LIBRARY_PATH` (kept in `.botlan-env`, read by `04_serve.sh`).
+step-by-step install above. They load their own libraries through `$ORIGIN`, so the account name and
+the install path do not matter; only the CUDA 13 runtime comes from the system, and the script finds
+it (`CUDA_HOME`, `/usr/local/cuda*`, or the loader path) and records it in `.botlan-env`. Services
+stop when you log out unless you run `sudo loginctl enable-linger $USER` once.
 
 ## The whole tree
 
@@ -238,7 +241,7 @@ benchmarks/                  measured data: single-stream and concurrency (REPOR
 | NVIDIA GB10 (DGX Spark) — sm_121, ~121 GB unified memory | driver 580.126.09 | both models on the GPU |
 | CUDA toolkit | 13.0 at `/usr/local/cuda-13.0` (`nvcc`) | building llama.cpp + jev-score |
 | llama.cpp checkout | `git clone https://github.com/ggml-org/llama.cpp` at `441df11f65ea0b6d0c72965aaf70c8241070ddcb` | runtime + GGUF conversion |
-| Python | 3.13 (system `python3`) | orchestrator, `jevstep`, evals |
+| Python | 3.12 (system `python3`, Ubuntu 24.04) | orchestrator, `jevstep`, evals |
 | Python runtime deps | `pip install tokenizers numpy` (the Jev model ships a `requirements.txt`) | the Jev GGUF runtime inside the orchestrator |
 | Python conversion deps | `torch`, `transformers`, `sentencepiece` + `llama.cpp/gguf-py` — script 03 builds its own `.venv` | step `03` only |
 | Python window dep | `textual` — script 06 installs it into the project venv | `jevstep-window` only |
