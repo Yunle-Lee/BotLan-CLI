@@ -76,6 +76,28 @@ curl -s -H "Authorization: Bearer $(cat ~/.spark-duo/botlan.key)" localhost:8091
 
 某一步失败时：各服务的输出在 `logs/*.log`；每个脚本都可以重复执行。在非 GB10 的 CUDA 机器上，第 2 步设置 `ARCH=<sm>`。
 
+## 用 U 盘离线安装（约 5 分钟，不用编译）
+
+适合现场拿到一台新 Spark、网络又不可靠的情况。U 盘里装的是上面第 2–4 步要编译或下载的东西，都是在 DGX Spark（DGX OS / Ubuntu 24.04 aarch64、CUDA 13.0）上做出来的：
+
+| U 盘里的文件 | 内容 | 大小 |
+|---|---|---|
+| `botlan-core.tar` | CUDA 版 llama.cpp（原生 sm_121，提交 `441df11`）、`jev-score`、Python 安装包（tokenizers、numpy、textual） | 128 MB |
+| `models/jev/` | Jev-Style-0.8B-Decision-v3 Q4_K_M + 分词器 + readout 配置（[HF](https://huggingface.co/chaoliangUNSW/Jev-Style-0.8B-Decision-v3-GGUF)，Apache-2.0） | 0.55 GB |
+| `models/gelab/` | GELab-Zero-4B Q4_K_M + mmproj f16（[stepfun-ai/GELab-Zero-4B-preview](https://huggingface.co/stepfun-ai/GELab-Zero-4B-preview) 的 [HF GGUF 版](https://huggingface.co/bartowski/stepfun-ai_GELab-Zero-4B-preview-GGUF)，Apache-2.0） | 3.1 GB |
+| `BotLan-CLI-src.tar` | 本仓库 | <1 MB |
+| `SHA256SUMS` | 以上所有文件的校验和 | |
+
+```sh
+# 在 Spark 上插好 U 盘（exFAT 会挂载到 /media/$USER/<卷标>）
+tar -C ~ -xf /media/$USER/Ventoy/BotLan/BotLan-CLI-src.tar && mv ~/BotLan-CLI ~/spark-duo
+cd ~/spark-duo
+sh scripts/00_offline_install.sh /media/$USER/Ventoy/BotLan   # 校验、解包、安装、启动（约 5 分钟）
+sh scripts/09_setup.sh                                  # 建第一个 Bot
+```
+
+这些程序只能在同样的平台上运行（aarch64、CUDA 13.0 运行库）；其他机器请用上面的逐步安装。程序是在 `/home/user1` 下链接的，换了用户名时脚本会自动设置 `LD_LIBRARY_PATH`（保存在 `.botlan-env`，`04_serve.sh` 会读取）。
+
 ## 完整调用树
 
 系统的每一条路径，以及每个阶段实际对话的进程：

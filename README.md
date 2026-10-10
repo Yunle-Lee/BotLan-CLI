@@ -88,6 +88,31 @@ in step 6 (`botlan_setup.py pair --json` is what it reads). Without the app: `ss
 If a step fails: `logs/*.log` holds each service's output; every script is idempotent and can be
 re-run. On a non-GB10 CUDA machine set `ARCH=<sm>` for step 2.
 
+## Offline install from a USB stick (~5 minutes, no compiling)
+
+For a venue with a new Spark and unreliable network. The stick carries what steps 2-4 above build or
+download, made on a DGX Spark (DGX OS / Ubuntu 24.04 aarch64, CUDA 13.0):
+
+| file on the stick | what | size |
+|---|---|---|
+| `botlan-core.tar` | llama.cpp CUDA build (native sm_121, commit `441df11`), `jev-score`, Python wheels (tokenizers, numpy, textual) | 128 MB |
+| `models/jev/` | Jev-Style-0.8B-Decision-v3 Q4_K_M + tokenizer + readout config ([HF](https://huggingface.co/chaoliangUNSW/Jev-Style-0.8B-Decision-v3-GGUF), Apache-2.0) | 0.55 GB |
+| `models/gelab/` | GELab-Zero-4B Q4_K_M + mmproj f16 ([HF GGUF](https://huggingface.co/bartowski/stepfun-ai_GELab-Zero-4B-preview-GGUF) of [stepfun-ai/GELab-Zero-4B-preview](https://huggingface.co/stepfun-ai/GELab-Zero-4B-preview), Apache-2.0) | 3.1 GB |
+| `BotLan-CLI-src.tar` | this repository | <1 MB |
+| `SHA256SUMS` | checksums of all of the above | |
+
+```sh
+# on the Spark, with the stick plugged in (exFAT mounts under /media/$USER/<label>)
+tar -C ~ -xf /media/$USER/Ventoy/BotLan/BotLan-CLI-src.tar && mv ~/BotLan-CLI ~/spark-duo
+cd ~/spark-duo
+sh scripts/00_offline_install.sh /media/$USER/Ventoy/BotLan   # verify, unpack, install, start (about 5 min)
+sh scripts/09_setup.sh                                  # first Bot
+```
+
+The binaries only run on the same platform (aarch64, CUDA 13.0 runtime). On anything else, use the
+step-by-step install above. They were linked under `/home/user1`; on another account the script
+sets `LD_LIBRARY_PATH` (kept in `.botlan-env`, read by `04_serve.sh`).
+
 ## The whole tree
 
 Every path through the system, and the process each stage actually talks to:
