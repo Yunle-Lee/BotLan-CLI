@@ -9,6 +9,8 @@ unified memory: a 0.53 GB decision model decides what to do, a 4B vision-languag
 > stack: the `jevstep` CLI and the agent window talk to Jev + GELab-Zero-4B, both served locally
 > on the GB10. Installation, benchmark data and every measured table live below.
 >
+> **New Spark?** Start with [Install on a fresh DGX Spark](#install-on-a-fresh-dgx-spark-step-by-step).
+>
 > **BotLan desktop panel → this Spark in one command:** `sh scripts/08_botlan.sh --install`, then
 > an SSH tunnel to `127.0.0.1:8091`. Jev picks the skill, the 4B runs it, and every command waits
 > for your approval in the panel. See [BotLan gateway](#botlan-gateway-botlan_gatewaypy-1270018091).
@@ -30,6 +32,61 @@ request (state up to 25,600 tokens, optionally an image)
 ```
 <img width="1057" height="892" alt="image" src="https://github.com/user-attachments/assets/298b33d4-f08d-4dc4-a831-bdd4b19c78c7" />
 
+
+## Install on a fresh DGX Spark (step by step)
+
+Tested on DGX OS (Ubuntu 24.04, aarch64) with CUDA 13.0 and an unprivileged user. Nothing below
+needs `sudo` except the optional last line. Expect about 45-70 minutes, mostly the CUDA build and
+the 8.9 GB model download.
+
+```sh
+# 0. tools (once): git, cmake, python3 are on DGX OS; add the two download CLIs
+python3 -m pip install --user -U "huggingface_hub[cli]" modelscope tokenizers numpy
+
+# 1. this repository
+git clone https://github.com/Yunle-Lee/BotLan-CLI ~/spark-duo
+cd ~/spark-duo
+
+# 2. llama.cpp with native sm_121 CUDA (pinned commit, ~20-40 min)
+git clone https://github.com/ggml-org/llama.cpp ~/llama.cpp
+git -C ~/llama.cpp checkout 441df11f65ea0b6d0c72965aaf70c8241070ddcb
+sh scripts/01_build_llamacpp_cuda.sh
+
+# 3. Jev decision model (0.53 GB) and its scorer
+hf download chaoliangUNSW/Jev-Style-0.8B-Decision-v3-GGUF --local-dir ~/models/Jev-Style-0.8B-Decision-v3-GGUF
+sh scripts/02_rebuild_jev_score.sh
+
+# 4. StepFun GELab-Zero-4B: download 8.9 GB, convert, quantize to Q4_K_M + mmproj
+sh scripts/03_convert_gelab.sh
+
+# 5. serve both models (llama-server :8080 + orchestrator :8090), then the BotLan gateway (:8091)
+sh scripts/04_serve.sh
+sh scripts/08_botlan.sh --install        # systemd user units; prints the gateway key
+
+# 6. first Bot: name, activity scope (treemap), model backend, memory/CPU budget
+sh scripts/06_install_window.sh          # optional: Textual UI for the wizard
+sh scripts/09_setup.sh
+
+# 7. optional, start at boot without logging in
+sudo loginctl enable-linger "$USER"
+```
+
+Check it:
+
+```sh
+curl -s localhost:8090/health                                  # both models resident
+python3 botlan_setup.py status --json                          # {"installed":true,"gateway_ok":true,"models_ok":true}
+curl -s -H "Authorization: Bearer $(cat ~/.spark-duo/botlan.key)" localhost:8091/health
+```
+
+Then, on the Windows laptop, open BotLan → tray menu **连接 DGX Spark…** → `user@spark-address`,
+port, password once. BotLan installs its own SSH key, keeps the tunnel up and adds the Bots created
+in step 6 (`botlan_setup.py pair --json` is what it reads). Without the app: `ssh -N -L
+8091:127.0.0.1:8091 user@spark` and a Bot with base URL `http://127.0.0.1:8091/v1`, model
+`jev-step`, the key from step 5.
+
+If a step fails: `logs/*.log` holds each service's output; every script is idempotent and can be
+re-run. On a non-GB10 CUDA machine set `ARCH=<sm>` for step 2.
 
 ## The whole tree
 
@@ -252,7 +309,23 @@ the door for the BotLan desktop panel and sits next to it - nothing else changes
   key run inside the slice. Measured: a 3 GB allocation is killed under a 1 GB zone. **Not enforced:**
   CUDA allocations (a 2.5 GB model loaded under a 1 GB cap), so a zone's GPU share is a budget the
   Bot passes to the engine. All zones share one Unix user: a resource partition, not a security
-  boundary.
+  boundary between Bots - but each zone's commands are kept inside its **scope** (below).
+- **Scope** (`scope`, absolute dirs, default the whole home). Zone commands start in the first scope
+  dir and run through `botlan_sandbox.py`: Landlock filesystem rules + `no_new_privs`, no root and no
+  namespaces (this Ubuntu blocks unprivileged user namespaces, so bwrap / `ProtectHome` fail here).
+  **Enforced:** read+write only in the scope dirs, the zone work dir, `/tmp`, `/var/tmp`, `/dev`;
+  read+exec for the system and `~/llama.cpp`, `~/models`, shell rc files; nothing else under
+  `/home`. `~/.spark-duo` (keys), `~/.ssh`, `~/.gnupg`, `~/.config/systemd` and the gateway code are
+  out of reach even when the scope is the whole home; setuid (sudo) cannot elevate. **Not
+  enforced:** network, and connecting to an existing UNIX socket (e.g. the systemd user bus). The
+  gateway checks it at start (a sandboxed read of the master key must fail) and reports
+  `scope_enforced`; on a kernel without Landlock commands run unconfined and it says `false`.
+  Master-key commands are unchanged (`exec_root`, unconfined).
+- **Backend per zone** (`upstream`): unset = this Spark's Jev-Step stack; or
+  `{"base_url", "model", "api_key"?}` for another local OpenAI-compatible server (`local`) or a hosted
+  API (`api`). Chat with that zone's key is proxied there (SSE and tools passed through, Jev hint
+  still added). The upstream key is kept only in `~/.spark-duo/zones.json` (0600) and no endpoint
+  returns it; `/v1/models` for that key lists the upstream model name.
 
 Every request needs `Authorization: Bearer` - the master key in `~/.spark-duo/botlan.key` (0600,
 created on first start) or a zone key (stored as sha256 only). Binds 127.0.0.1; reach it over SSH.
@@ -262,6 +335,46 @@ sh scripts/08_botlan.sh            # start Spark Duo if needed + the gateway, pr
 sh scripts/08_botlan.sh --install  # same, as systemd user units (spark-duo + botlan-gateway)
 # laptop:  ssh -N -L 8091:127.0.0.1:8091 user@spark   ->  Bot base URL http://127.0.0.1:8091/v1
 ```
+
+### First-run setup (`botlan_setup.py`, `scripts/09_setup.sh`)
+
+```sh
+sh scripts/09_setup.sh            # the wizard: Textual from ~/spark-duo/.venv, plain prompts otherwise
+```
+
+1. **Bot**: name + color (`#76B900 #54A8FF #FF7A59 #C792EA #FFD866 #FF6188`).
+2. **Scope**: a light treemap of `$HOME` (top two levels, ~4 s budget, 1.5 s per dir, unreadable
+   dirs skipped, cached 1 h in `~/.spark-duo/scan-cache.json`; a `+` size is a lower bound). Arrows
+   move, space selects, enter continues; nothing selected = the whole home.
+3. **Model**: `jev-step` (reuses the running stack; whatever is missing of 01 / 03 / 04 / 08 runs in
+   the background, log `logs/setup-stack.log`), `local` (probes 8000, 8355, 8356, 30000, 11434,
+   8080 for `/v1/models`), or `api` (base URL, model, key).
+4. **Resources**: memory GB + CPU %, against the gateway's assignable budget.
+5. **Pairing**: the Bot is created, its key saved for pairing, the laptop's next step printed.
+
+Scriptable, all with the system `python3`:
+
+```sh
+python3 botlan_setup.py pair --json      # what the BotLan app reads (below), exit 0
+python3 botlan_setup.py status --json    # {"installed":true,"gateway_ok":true,"models_ok":true}
+python3 botlan_setup.py list | remove <id>
+python3 botlan_setup.py create --name Vision --color '#54A8FF' --mem-gb 16 --cpu-pct 400 \
+    --scope ~/work --backend jev-step|local|api [--base-url URL --model M --api-key K] --json
+```
+
+Pairing: the Windows app runs `ssh <spark> python3 ~/spark-duo/botlan_setup.py pair --json` and
+reads one object:
+
+```json
+{"v":1,
+ "spark":{"hostname":"spark-8691","gateway_port":8091,"gateway_ok":true,"mem_total_gb":121.7,"gpu":"NVIDIA GB10"},
+ "bots":[{"id":"zvision","name":"Vision","color":"#54A8FF","model":"jev-step","api_key":"blz_...","backend":"jev-step","scope":["/home/user1/work"]}],
+ "master":{"name":"DGX Spark","model":"jev-step","api_key":"bl_..."}}
+```
+
+Zone keys are saved at creation in `~/.spark-duo/pair.json` (0600); a zone made without this tool
+has `"api_key": null`. Anyone who can run that command over SSH is already this user, so it adds no
+new access. `remove` deletes the key from `pair.json` too.
 
 ### Connect the BotLan panel
 
@@ -289,14 +402,14 @@ Denied, unanswered for 5 minutes, or an aborted run all count as a denial. The m
 
 | method | path | key | what |
 | --- | --- | --- | --- |
-| GET | `/health` | any | models up, available memory |
-| GET | `/v1/models` | any | `jev-step` |
+| GET | `/health` | any | models up, available memory, `ctx_per_slot` (llama-server `/props`, cached 60 s), `scope_enforced` |
+| GET | `/v1/models` | any | `jev-step` (+ the upstream model for a zone with `upstream`) |
 | POST | `/v1/chat/completions` | any | OpenAI chat, `stream` + `tools` passed through, Jev skill hint added |
 | GET | `/botlan/routes` | any | recent Jev routing decisions (what the panel shows) |
 | GET | `/botlan/telemetry` | any | unified memory, GPU util / temp / power, GPU processes |
-| POST | `/botlan/exec` | any | `{"command", "cwd"?}` → `{exit_code, output, truncated, timed_out}`; zone keys run inside their slice |
-| GET | `/botlan/zones` | any | zones, assignable memory (`total − reserved_gb − assigned`) |
-| POST | `/botlan/zones` | master | `{"name", "mem_gb", "cpu_pct"}` → zone + its key (shown once); 409 if over budget |
+| POST | `/botlan/exec` | any | `{"command", "cwd"?}` → `{exit_code, output, truncated, timed_out, scope_enforced}`; zone keys run inside their slice and scope (default cwd: first scope dir) |
+| GET | `/botlan/zones` | any | zones (scope, backend, model, `scope_enforced`; never keys), assignable memory (`total − reserved_gb − assigned`) |
+| POST | `/botlan/zones` | master | `{"name", "mem_gb", "cpu_pct", "scope"?, "upstream"?, "color"?}` → zone + its key (shown once); 409 if over budget or the scope is protected |
 | POST | `/botlan/zones/<id>/delete` | master | stop everything in the slice, revoke the key; work dir kept |
 
 ```sh

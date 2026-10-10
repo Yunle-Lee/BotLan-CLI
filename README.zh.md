@@ -6,6 +6,8 @@
 
 > **DGX Spark 上的 BotLan CLI。** BotLan 的前端（本仓库）驱动的正是这套栈：`jevstep` CLI 和 agent 窗口与 Jev + GELab-Zero-4B 对话，二者都本地运行在 GB10 上。安装方式、基准数据和全部实测表格都在下文。
 >
+> **新的 Spark？** 先看 [在一台全新的 DGX Spark 上安装](#在一台全新的-dgx-spark-上安装逐步)。
+>
 > **BotLan 桌面面板一条命令接入这台 Spark：** `sh scripts/08_botlan.sh --install`，再建一条到 `127.0.0.1:8091` 的 SSH 隧道。Jev 选技能，4B 照技能执行，每条命令都要你在面板里批准。见 [BotLan 网关](#botlan-网关botlan_gatewaypy1270018091)。
 
 ```
@@ -25,6 +27,54 @@ request（state 最长 25,600 tokens，可选带一张图片）
 ```
 <img width="1057" height="892" alt="image" src="https://github.com/user-attachments/assets/5ebb87bc-d62f-4ce5-944b-c536537883f9" />
 
+
+## 在一台全新的 DGX Spark 上安装（逐步）
+
+在 DGX OS（Ubuntu 24.04，aarch64）、CUDA 13.0、普通用户下实测。除最后一行可选命令外都不需要 `sudo`。全程约 45–70 分钟，主要花在 CUDA 编译和 8.9 GB 模型下载上。
+
+```sh
+# 0. 工具（一次）：DGX OS 自带 git、cmake、python3，再装两个下载工具
+python3 -m pip install --user -U "huggingface_hub[cli]" modelscope tokenizers numpy
+
+# 1. 本仓库
+git clone https://github.com/Yunle-Lee/BotLan-CLI ~/spark-duo
+cd ~/spark-duo
+
+# 2. 编译原生 sm_121 CUDA 的 llama.cpp（固定提交，约 20–40 分钟）
+git clone https://github.com/ggml-org/llama.cpp ~/llama.cpp
+git -C ~/llama.cpp checkout 441df11f65ea0b6d0c72965aaf70c8241070ddcb
+sh scripts/01_build_llamacpp_cuda.sh
+
+# 3. Jev 决策模型（0.53 GB）及其打分器
+hf download chaoliangUNSW/Jev-Style-0.8B-Decision-v3-GGUF --local-dir ~/models/Jev-Style-0.8B-Decision-v3-GGUF
+sh scripts/02_rebuild_jev_score.sh
+
+# 4. StepFun GELab-Zero-4B：下载 8.9 GB，转换并量化为 Q4_K_M + mmproj
+sh scripts/03_convert_gelab.sh
+
+# 5. 启动两个模型（llama-server :8080 + orchestrator :8090），再启动 BotLan 网关（:8091）
+sh scripts/04_serve.sh
+sh scripts/08_botlan.sh --install        # 安装 systemd 用户服务，并打印网关 Key
+
+# 6. 第一个 Bot：名字、活动范围（方块图框选）、模型后端、内存/CPU 预算
+sh scripts/06_install_window.sh          # 可选：向导的 Textual 界面
+sh scripts/09_setup.sh
+
+# 7. 可选：不登录也开机自启
+sudo loginctl enable-linger "$USER"
+```
+
+检查是否成功：
+
+```sh
+curl -s localhost:8090/health                                  # 两个模型都已常驻
+python3 botlan_setup.py status --json                          # {"installed":true,"gateway_ok":true,"models_ok":true}
+curl -s -H "Authorization: Bearer $(cat ~/.spark-duo/botlan.key)" localhost:8091/health
+```
+
+然后在 Windows 笔记本上打开 BotLan → 托盘菜单 **连接 DGX Spark…** → 填 `用户名@Spark地址`、端口，第一次输一次密码。BotLan 会自己装 SSH 密钥、维持隧道，并把第 6 步建好的 Bot 加进来（它读取的是 `botlan_setup.py pair --json`）。不用 BotLan 应用时：`ssh -N -L 8091:127.0.0.1:8091 user@spark`，再添加一个 Bot，地址 `http://127.0.0.1:8091/v1`，模型 `jev-step`，Key 用第 5 步打印的那串。
+
+某一步失败时：各服务的输出在 `logs/*.log`；每个脚本都可以重复执行。在非 GB10 的 CUDA 机器上，第 2 步设置 `ARCH=<sm>`。
 
 ## 完整调用树
 
@@ -217,7 +267,9 @@ loginctl enable-linger "$USER"
 - **Jev 做技能路由**：面板的系统提示词里有该 Bot 已装的 Agent Skills；网关让 Jev（`/decide`，约 30 ms，不生成）选出与最新一轮用户请求匹配的技能，再提示 4B 先 `load_skill`。只是建议，完整目录仍在提示词里。实测：“检查 Spark 健康”→ `spark-node-health` 0.95，“TensorRT-LLM NVFP4”→ `spark-trtllm-serve` 0.87，闲聊 → `none` 0.99。
 - **审批后执行**：`POST /botlan/exec` 以当前用户执行一条 bash（超时、输出上限、按进程组终止）。面板在每次调用前都要人工批准；`allow_exec: false` 让 Spark 对 BotLan 只读。
 - **遥测**（`/botlan/telemetry`）：统一内存池、GPU 利用率/温度/功耗、GPU 进程。
-- **分区**（`/botlan/zones`）：把 Spark 切成若干区，一区一个 Bot。每个区是一个 systemd 用户 slice（`MemoryMax`、`CPUQuota`、`TasksMax`）、一个工作目录和一把独立 Key，带分区 Key 的命令在该 slice 内运行。实测：1 GB 分区里申请 3 GB 会被杀掉。**不受约束的部分**：CUDA 分配（1 GB 上限下照样加载了 2.5 GB 模型），所以分区的 GPU 份额是一个预算，需要 Bot 在启动引擎时自己遵守。所有分区共用一个 Unix 用户：这是资源划分，不是 Bot 之间的安全边界。
+- **分区**（`/botlan/zones`）：把 Spark 切成若干区，一区一个 Bot。每个区是一个 systemd 用户 slice（`MemoryMax`、`CPUQuota`、`TasksMax`）、一个工作目录和一把独立 Key，带分区 Key 的命令在该 slice 内运行。实测：1 GB 分区里申请 3 GB 会被杀掉。**不受约束的部分**：CUDA 分配（1 GB 上限下照样加载了 2.5 GB 模型），所以分区的 GPU 份额是一个预算，需要 Bot 在启动引擎时自己遵守。所有分区共用一个 Unix 用户：这是资源划分，不是 Bot 之间的安全边界——但每个分区的命令被限制在它的**作用范围**里（见下）。
+- **作用范围**（`scope`，绝对路径目录，默认整个 home）：分区命令从第一个范围目录开始，经 `botlan_sandbox.py` 运行：Landlock 文件系统规则 + `no_new_privs`，不需要 root，也不用命名空间（本机 Ubuntu 禁止非特权用户命名空间，bwrap / `ProtectHome` 在这里都失败）。**受约束：** 只能读写范围目录、分区工作目录、`/tmp`、`/var/tmp`、`/dev`；系统目录以及 `~/llama.cpp`、`~/models`、shell 启动文件只读可执行；`/home` 下其余一概不可访问。即使范围是整个 home，`~/.spark-duo`（Key）、`~/.ssh`、`~/.gnupg`、`~/.config/systemd` 和网关代码也碰不到；setuid（sudo）无法提权。**不受约束：** 网络，以及连接已存在的 UNIX socket（比如 systemd 用户总线）。网关启动时自检（在沙箱里读主 Key 必须失败）并报告 `scope_enforced`；内核没有 Landlock 时命令不受限运行，并报告 `false`。主 Key 的命令不变（`exec_root`，不受限）。
+- **每个分区的后端**（`upstream`）：不设 = 本机 Jev-Step；或 `{"base_url", "model", "api_key"?}`，指向本机另一个 OpenAI 兼容服务（`local`）或托管 API（`api`）。用该分区 Key 的对话被转发过去（SSE 与 tools 透传，仍附加 Jev 提示）。上游 Key 只存在 `~/.spark-duo/zones.json`（0600），任何接口都不返回；该 Key 的 `/v1/models` 列出上游模型名。
 
 每个请求都要 `Authorization: Bearer`：主 Key 在 `~/.spark-duo/botlan.key`（0600，首次启动生成），或分区 Key（只存 sha256）。只监听 127.0.0.1，通过 SSH 访问。
 
@@ -226,6 +278,39 @@ sh scripts/08_botlan.sh            # 需要时启动 Spark Duo，再启动网关
 sh scripts/08_botlan.sh --install  # 同上，并安装 systemd 用户单元（spark-duo + botlan-gateway）
 # 笔记本：ssh -N -L 8091:127.0.0.1:8091 user@spark  ->  Bot 地址 http://127.0.0.1:8091/v1
 ```
+
+### 首次设置（`botlan_setup.py`、`scripts/09_setup.sh`）
+
+```sh
+sh scripts/09_setup.sh            # 向导：有 ~/spark-duo/.venv 里的 Textual 就用 TUI，否则是纯文本提问
+```
+
+1. **Bot**：名字 + 颜色（`#76B900 #54A8FF #FF7A59 #C792EA #FFD866 #FF6188`）。
+2. **作用范围**：`$HOME` 的轻量 treemap（只扫两层，总预算约 4 s，每个目录 1.5 s，跳过不可读目录，缓存 1 小时在 `~/.spark-duo/scan-cache.json`；带 `+` 的大小是下限）。方向键移动，空格选择，回车继续；不选 = 整个 home。
+3. **模型**：`jev-step`（复用正在运行的栈；缺 01 / 03 / 04 / 08 中哪一步就在后台跑哪一步，日志 `logs/setup-stack.log`）、`local`（探测 8000、8355、8356、30000、11434、8080 的 `/v1/models`）或 `api`（地址、模型、Key）。
+4. **资源**：内存 GB + CPU %，对照网关还能分配的预算。
+5. **配对**：创建 Bot，保存它的 Key 以便配对，打印笔记本上的下一步。
+
+可脚本化，都用系统 `python3`：
+
+```sh
+python3 botlan_setup.py pair --json      # BotLan 应用读取的内容（见下），退出码 0
+python3 botlan_setup.py status --json    # {"installed":true,"gateway_ok":true,"models_ok":true}
+python3 botlan_setup.py list | remove <id>
+python3 botlan_setup.py create --name Vision --color '#54A8FF' --mem-gb 16 --cpu-pct 400 \
+    --scope ~/work --backend jev-step|local|api [--base-url URL --model M --api-key K] --json
+```
+
+配对：Windows 应用执行 `ssh <spark> python3 ~/spark-duo/botlan_setup.py pair --json`，读取一个对象：
+
+```json
+{"v":1,
+ "spark":{"hostname":"spark-8691","gateway_port":8091,"gateway_ok":true,"mem_total_gb":121.7,"gpu":"NVIDIA GB10"},
+ "bots":[{"id":"zvision","name":"Vision","color":"#54A8FF","model":"jev-step","api_key":"blz_...","backend":"jev-step","scope":["/home/user1/work"]}],
+ "master":{"name":"DGX Spark","model":"jev-step","api_key":"bl_..."}}
+```
+
+分区 Key 在创建时保存到 `~/.spark-duo/pair.json`（0600）；不是用本工具创建的分区为 `"api_key": null`。能通过 SSH 执行这条命令的人本来就是这个用户，所以不增加新的访问面。`remove` 也会把 Key 从 `pair.json` 删掉。
 
 ### 接入 BotLan 面板
 
@@ -249,14 +334,14 @@ sh scripts/08_botlan.sh --install  # 同上，并安装 systemd 用户单元（s
 
 | 方法 | 路径 | Key | 作用 |
 | --- | --- | --- | --- |
-| GET | `/health` | 任意 | 模型是否在线、可用内存 |
-| GET | `/v1/models` | 任意 | `jev-step` |
+| GET | `/health` | 任意 | 模型是否在线、可用内存、`ctx_per_slot`（llama-server `/props`，缓存 60 s）、`scope_enforced` |
+| GET | `/v1/models` | 任意 | `jev-step`（设了 `upstream` 的分区还会列出上游模型） |
 | POST | `/v1/chat/completions` | 任意 | OpenAI 对话，透传 `stream` + `tools`，附加 Jev 技能提示 |
 | GET | `/botlan/routes` | 任意 | 最近的 Jev 路由决策（面板显示的就是它） |
 | GET | `/botlan/telemetry` | 任意 | 统一内存、GPU 利用率 / 温度 / 功耗、GPU 进程 |
-| POST | `/botlan/exec` | 任意 | `{"command", "cwd"?}` → `{exit_code, output, truncated, timed_out}`；分区 Key 在自己的 slice 内执行 |
-| GET | `/botlan/zones` | 任意 | 分区列表、可分配内存（`总量 − reserved_gb − 已分配`） |
-| POST | `/botlan/zones` | 主 Key | `{"name", "mem_gb", "cpu_pct"}` → 分区 + 它的 Key（只显示一次）；超预算返回 409 |
+| POST | `/botlan/exec` | 任意 | `{"command", "cwd"?}` → `{exit_code, output, truncated, timed_out, scope_enforced}`；分区 Key 在自己的 slice 和作用范围内执行（默认 cwd：第一个范围目录） |
+| GET | `/botlan/zones` | 任意 | 分区列表（范围、后端、模型、`scope_enforced`；从不含 Key）、可分配内存（`总量 − reserved_gb − 已分配`） |
+| POST | `/botlan/zones` | 主 Key | `{"name", "mem_gb", "cpu_pct", "scope"?, "upstream"?, "color"?}` → 分区 + 它的 Key（只显示一次）；超预算或范围受保护返回 409 |
 | POST | `/botlan/zones/<id>/delete` | 主 Key | 结束 slice 里的全部进程、吊销 Key；工作目录保留 |
 
 ```sh

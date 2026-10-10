@@ -24,6 +24,16 @@ zone's GPU share is a budget the engine must be told (--gpu-memory-utilization, 
 run as the same Unix user - zones partition resources, they are not a security boundary between
 Bots. Only the master key manages zones.
 
+Scope: a zone also has `scope`, the directories its Bot may work in (default: the whole home).
+Zone commands run through botlan_sandbox.py (Landlock, no root): read+write inside the scope and
+the zone work dir, read+exec for the system, nothing else under /home - the keys in ~/.spark-duo,
+~/.ssh and the gateway code stay out of reach even when the scope is the whole home. Without
+Landlock the command runs unconfined and the zone reports `scope_enforced: false`.
+
+Upstream: a zone's chat goes to the local Jev-Step stack, or - with `upstream` {base_url, model,
+api_key} - to any OpenAI-compatible server (another local engine, or a hosted API). The upstream
+key lives only in the zones file (0600); no endpoint returns it.
+
 Every request needs `Authorization: Bearer <key>`. The key comes from BOTLAN_GATEWAY_KEY or
 ~/.spark-duo/botlan.key (created 0600 on first start). Binds 127.0.0.1 by default; reach it over
 an SSH tunnel.
@@ -88,6 +98,17 @@ ZONES_DIR = Path(GW.get("zones_root", "~/botlan-zones")).expanduser()
 RESERVED_GB = float(GW.get("reserved_gb", 16))     # Spark Duo + OS headroom never handed to zones
 UNIT_DIR = Path(os.environ.get("XDG_CONFIG_HOME", "~/.config")).expanduser() / "systemd" / "user"
 _ZONES_LOCK = threading.Lock()
+HOME = Path.home()
+SANDBOX = ROOT / "botlan_sandbox.py"
+# never readable or writable from a zone, whatever its scope
+PROTECT = [str(Path(p).expanduser()) for p in GW.get("protect", [
+    "~/.spark-duo", "~/.ssh", "~/.gnupg", "~/.config/systemd", "~/.bashrc", "~/.profile",
+    "~/.bash_profile", "~/.bash_logout", "~/.pam_environment"])] + [str(ROOT), str(ZONES_FILE.parent)]
+# read+exec from a zone: shell startup files and the shared model/toolchain dirs
+SANDBOX_RO = [str(Path(p).expanduser()) for p in GW.get("sandbox_ro", [
+    "~/.bashrc", "~/.profile", "~/.bash_profile", "~/.cargo", "~/.local/bin", "~/llama.cpp", "~/models",
+    str(ROOT / "models")])]
+SCOPE_ENFORCED = False      # set at start by sandbox_selftest()
 
 
 def load_key() -> str:
@@ -146,7 +167,48 @@ def write_slice(zone: dict) -> None:
     systemctl("daemon-reload")
 
 
-def create_zone(name: str, mem_gb: float, cpu_pct: float) -> tuple[dict, str]:
+def check_scope(scope) -> list[str]:
+    """Absolute, existing directories, not one of the protected paths. Default: the whole home."""
+    if scope in (None, [], ""):
+        return [str(HOME)]
+    if isinstance(scope, str):
+        scope = [scope]
+    if not isinstance(scope, list) or len(scope) > 16:
+        raise ValueError("scope must be a list of up to 16 absolute directories")
+    out = []
+    for d in scope:
+        if not isinstance(d, str) or not d.startswith("/"):
+            raise ValueError(f"scope entries must be absolute paths: {d!r}")
+        path = Path(d).resolve()
+        if not path.is_dir():
+            raise ValueError(f"not a directory: {d}")
+        if any(path == Path(p) or Path(p) in path.parents for p in PROTECT):
+            raise ValueError(f"{path} is protected (keys, ssh, gateway code)")
+        if str(path) not in out:
+            out.append(str(path))
+    return out
+
+
+def check_upstream(up) -> dict | None:
+    """None = the local Jev-Step stack; else {base_url, model, api_key, backend}."""
+    if up in (None, {}, ""):
+        return None
+    if not isinstance(up, dict):
+        raise ValueError("upstream must be an object {base_url, model, api_key?}")
+    base = str(up.get("base_url") or "").strip().rstrip("/")
+    model = str(up.get("model") or "").strip()
+    if not re.fullmatch(r"https?://\S+", base) or not model:
+        raise ValueError("upstream needs base_url (http/https) and model")
+    backend = up.get("backend") or ("local" if re.match(r"https?://(127\.|localhost)", base) else "api")
+    if backend not in ("local", "api"):
+        raise ValueError("upstream backend must be local or api")
+    return {"base_url": base, "model": model[:200], "api_key": str(up.get("api_key") or "")[:4000],
+            "backend": backend}
+
+
+def create_zone(name: str, mem_gb: float, cpu_pct: float, scope=None, upstream=None,
+                color: str | None = None) -> tuple[dict, str]:
+    scope, upstream = check_scope(scope), check_upstream(upstream)
     total = mem_total_gb() or 0
     with _ZONES_LOCK:
         zones = load_zones()
@@ -161,7 +223,9 @@ def create_zone(name: str, mem_gb: float, cpu_pct: float) -> tuple[dict, str]:
         key = "blz_" + secrets.token_urlsafe(24)
         zone = {"id": zid, "name": name, "mem_gb": mem_gb, "cpu_pct": cpu_pct, "tasks_max": 512,
                 "workdir": str(ZONES_DIR / zid), "key_sha256": _digest(key),
-                "created_at": int(time.time() * 1000)}
+                "created_at": int(time.time() * 1000), "scope": scope, "upstream": upstream}
+        if color and re.fullmatch(r"#[0-9A-Fa-f]{6}", color):
+            zone["color"] = color
         Path(zone["workdir"]).mkdir(parents=True, exist_ok=True)
         write_slice(zone)
         zones.append(zone)
@@ -201,8 +265,21 @@ def zone_usage(zone: dict, gpu_processes: list[dict]) -> dict:
             "gpu_mem_gb": round(gpu_mb / 1024, 2)}
 
 
+def zone_scope(zone: dict) -> list[str]:
+    return zone.get("scope") or [str(HOME)]          # zones made before scope existed: the home
+
+
+def zone_model(zone: dict) -> str:
+    return (zone.get("upstream") or {}).get("model") or MODEL_ID
+
+
 def public_zone(zone: dict, gpu_processes: list[dict] | None = None) -> dict:
+    """Everything the panel may show. Never the key digest or the upstream key."""
     out = {k: zone[k] for k in ("id", "name", "mem_gb", "cpu_pct", "workdir", "created_at")}
+    up = zone.get("upstream")
+    out.update({"color": zone.get("color"), "scope": zone_scope(zone),
+                "backend": up["backend"] if up else "jev-step", "model": zone_model(zone),
+                "upstream_url": up["base_url"] if up else None, "scope_enforced": SCOPE_ENFORCED})
     if gpu_processes is not None:
         out["usage"] = zone_usage(zone, gpu_processes)
     return out
@@ -211,7 +288,8 @@ def public_zone(zone: dict, gpu_processes: list[dict] | None = None) -> dict:
 def zone_note(zone: dict) -> str:
     return (f"\n\n## Your zone on this DGX Spark\nYou are the Bot for zone `{zone['id']}` "
             f"(\"{zone['name']}\"). Its budget is {zone['mem_gb']:g} GB of the unified memory and "
-            f"{zone['cpu_pct']:g}% CPU. Commands you run start in {zone['workdir']} inside this zone, "
+            f"{zone['cpu_pct']:g}% CPU. Commands you run start in {zone_scope(zone)[0]} inside this zone "
+            f"and may only touch {', '.join(zone_scope(zone))} and {zone['workdir']}; "
             "and anything they leave running is capped there. GPU memory is not enforced by the cap: "
             "when you start a model server, size it to fit the budget (vLLM --gpu-memory-utilization, "
             "llama.cpp -c) and say what you chose. Other zones and the shared Jev/GELab models are "
@@ -311,10 +389,16 @@ def mem_total_gb() -> float | None:
 def run_command(command: str, cwd: str | None, zone: dict | None = None) -> dict:
     """One bash command in its own process group, killed as a group on timeout. With a zone it
     runs inside the zone's slice, rooted at the zone's work directory."""
-    root = Path(zone["workdir"]).resolve() if zone else EXEC_ROOT.resolve()
-    work = (root / cwd).resolve() if cwd else root
-    if work != root and root not in work.parents:
-        return {"error": f"cwd must stay inside {root}"}
+    if zone:     # default: the first scope dir; a relative cwd is taken from there
+        roots = [Path(d) for d in zone_scope(zone)] + [Path(zone["workdir"]).resolve()]
+        work = (roots[0] / cwd).resolve() if cwd else roots[0]
+        if not any(work == r or r in work.parents for r in roots):
+            return {"error": f"cwd must stay inside the zone scope: {', '.join(map(str, roots))}"}
+    else:
+        root = EXEC_ROOT.resolve()
+        work = (root / cwd).resolve() if cwd else root
+        if work != root and root not in work.parents:
+            return {"error": f"cwd must stay inside {root}"}
     if not work.is_dir():
         return {"error": f"no such directory: {work}"}
     if not _EXEC_SLOTS.acquire(timeout=5):
@@ -325,8 +409,10 @@ def run_command(command: str, cwd: str | None, zone: dict | None = None) -> dict
         if zone:     # a scope execs bash in place, so the pid and process group stay ours to kill
             # OOMPolicy=continue: hitting the zone cap kills the offending process, not the shell
             # that would report it.
+            # botlan_sandbox applies the Landlock scope, then execs bash.
             argv = ["systemd-run", "--user", "--scope", "--quiet", "-p", "OOMPolicy=continue",
-                    f"--slice={slice_name(zone['id'])}", *argv]
+                    f"--slice={slice_name(zone['id'])}", sys.executable, str(SANDBOX),
+                    "--spec", json.dumps(sandbox_spec(zone)), "--", *argv]
         proc = subprocess.Popen(argv, cwd=work, stdin=subprocess.DEVNULL,
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                 start_new_session=True)
@@ -345,6 +431,8 @@ def run_command(command: str, cwd: str | None, zone: dict | None = None) -> dict
                 "reached.\n").encode()
     return {"exit_code": None if timed_out else proc.returncode, "timed_out": timed_out,
             "truncated": truncated, "cwd": str(work), "zone": zone["id"] if zone else None,
+            "scope_enforced": (SCOPE_ENFORCED and b"[botlan-sandbox] unconfined" not in out[:400])
+                              if zone else None,
             "output": out[-EXEC_MAX_OUTPUT:].decode("utf-8", "replace"),
             "ms": round((time.perf_counter() - t0) * 1000, 1)}
 
@@ -387,6 +475,44 @@ def _num(text: str):
         return float(text)
     except ValueError:
         return None      # "[N/A]" on GB10 for fields that unified memory makes meaningless
+
+
+_CTX = {"at": 0.0, "value": None}
+
+
+def ctx_per_slot() -> int | None:
+    """Per-slot context of llama-server, from /props, cached 60 s."""
+    if time.time() - _CTX["at"] < 60:
+        return _CTX["value"]
+    value = None
+    try:
+        with urllib.request.urlopen(VLM_URL + "/props", timeout=3) as r:
+            props = json.loads(r.read())
+        n = (props.get("default_generation_settings") or {}).get("n_ctx")
+        if not n and props.get("n_ctx") and props.get("total_slots"):
+            n = int(props["n_ctx"]) // int(props["total_slots"])
+        value = int(n) if n else None
+    except (urllib.error.URLError, OSError, ValueError, TypeError):
+        pass
+    _CTX.update(at=time.time(), value=value)
+    return value
+
+
+def sandbox_spec(zone: dict) -> dict:
+    return {"rw": [*zone_scope(zone), zone["workdir"]], "ro": SANDBOX_RO, "protect": PROTECT}
+
+
+def sandbox_selftest() -> bool:
+    """Is the scope really enforced on this kernel? Read the master key file from a sandbox whose
+    scope is the whole home: it must fail."""
+    keyfile = Path(GW.get("key_file", "~/.spark-duo/botlan.key")).expanduser()
+    spec = {"rw": [str(HOME)], "ro": SANDBOX_RO, "protect": PROTECT}
+    try:
+        r = subprocess.run([sys.executable, str(SANDBOX), "--spec", json.dumps(spec), "--",
+                            "cat", str(keyfile)], capture_output=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return r.returncode != 0 and b"unconfined" not in r.stderr and KEY.encode() not in r.stdout
 
 
 def probe(url: str) -> bool:
@@ -436,8 +562,9 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/health":
             self._send({"ok": True, "botlan": 1, "model": MODEL_ID, "vlm": probe(VLM_URL + "/health"),
                         "jev": probe(ORCH_URL + "/health"), "mem_available_gb": mem_available_gb(),
-                        "route_threshold": THRESHOLD, "exec": ALLOW_EXEC,
-                        "exec_root": (self.zone["workdir"] if self.zone else str(EXEC_ROOT)) if ALLOW_EXEC else None,
+                        "route_threshold": THRESHOLD, "exec": ALLOW_EXEC, "ctx_per_slot": ctx_per_slot(),
+                        "scope_enforced": SCOPE_ENFORCED,
+                        "exec_root": (zone_scope(self.zone)[0] if self.zone else str(EXEC_ROOT)) if ALLOW_EXEC else None,
                         "zone": public_zone(self.zone) if self.zone else None})
         elif self.path == "/botlan/telemetry":
             data = telemetry()
@@ -452,9 +579,12 @@ class Handler(BaseHTTPRequestHandler):
                         "admin": self.zone is None, "mem_total_gb": total, "reserved_gb": RESERVED_GB,
                         "assignable_gb": round(total - RESERVED_GB - sum(z["mem_gb"] for z in zones), 1)})
         elif self.path in ("/v1/models", "/models"):
-            self._send({"object": "list", "data": [
-                {"id": MODEL_ID, "object": "model", "owned_by": "botlan",
-                 "description": "Jev-0.8B skill router + StepFun GELab-Zero-4B on DGX Spark"}]})
+            models = [{"id": MODEL_ID, "object": "model", "owned_by": "botlan",
+                       "description": "Jev-0.8B skill router + StepFun GELab-Zero-4B on DGX Spark"}]
+            if self.zone and self.zone.get("upstream"):     # the name this key's Bot was paired with
+                models.insert(0, {"id": zone_model(self.zone), "object": "model", "owned_by": "botlan",
+                                  "description": f"{self.zone['upstream']['backend']} upstream via BotLan"})
+            self._send({"object": "list", "data": models})
         elif self.path == "/botlan/routes":
             self._send({"routes": list(ROUTES)})
         else:
@@ -519,16 +649,26 @@ class Handler(BaseHTTPRequestHandler):
         if self.zone:
             messages = with_hint(messages, zone_note(self.zone))
 
+        target = (self.zone or {}).get("upstream")
         upstream = {**req, "messages": messages}
-        upstream.pop("model", None)          # llama-server serves one model; keep the panel's name out
+        headers = {"Content-Type": "application/json"}
+        if target:           # this zone's own engine or API: its model name, its key
+            upstream["model"] = target["model"]
+            if target.get("api_key"):
+                headers["Authorization"] = "Bearer " + target["api_key"]
+            url = target["base_url"] + "/chat/completions"
+        else:
+            upstream.pop("model", None)      # llama-server serves one model; keep the panel's name out
+            url = VLM_URL + "/v1/chat/completions"
         body = json.dumps(upstream).encode()
-        up = urllib.request.Request(VLM_URL + "/v1/chat/completions", data=body,
-                                    headers={"Content-Type": "application/json"})
+        up = urllib.request.Request(url, data=body, headers=headers)
         route_header = {"X-Jev-Route": json.dumps(route, ensure_ascii=True)} if route else {}
         try:
             resp = urllib.request.urlopen(up, timeout=TIMEOUT)
         except urllib.error.HTTPError as exc:
             detail = exc.read()[:4000].decode("utf-8", "replace")
+            if target and target.get("api_key"):
+                detail = detail.replace(target["api_key"], "***")
             self._send({"error": {"message": f"model server: {exc.code} {detail}"}}, exc.code)
             return
         except (urllib.error.URLError, OSError) as exc:
@@ -538,7 +678,7 @@ class Handler(BaseHTTPRequestHandler):
         with resp:
             if not req.get("stream"):
                 data = json.loads(resp.read())
-                data["model"] = MODEL_ID
+                data["model"] = zone_model(self.zone) if self.zone else MODEL_ID
                 if route:
                     data["jev_route"] = route
                 self._send(data, headers=route_header)
@@ -573,23 +713,27 @@ class Handler(BaseHTTPRequestHandler):
             self._send({"error": "name, mem_gb (1-120) and cpu_pct (5-2000) are required"}, 400)
             return
         try:
-            zone, key = create_zone(name, mem_gb, cpu_pct)
+            zone, key = create_zone(name, mem_gb, cpu_pct, req.get("scope"), req.get("upstream"),
+                                    req.get("color"))
         except ValueError as exc:
             self._send({"error": str(exc)}, 409)
             return
-        print(f"  zone created: {zone['id']} {mem_gb:g}GB {cpu_pct:g}%", flush=True)
+        print(f"  zone created: {zone['id']} {mem_gb:g}GB {cpu_pct:g}% scope={zone['scope']} "
+              f"backend={public_zone(zone)['backend']}", flush=True)
         # The key is shown once; only its sha256 is stored.
         self._send({"zone": public_zone(zone), "api_key": key}, 201)
 
 
 def main():
-    global KEY
+    global KEY, SCOPE_ENFORCED
     ap = argparse.ArgumentParser(description="BotLan gateway (Jev skill router + GELab)")
     ap.add_argument("--host", default=GW.get("host", "127.0.0.1"))
     ap.add_argument("--port", type=int, default=GW.get("port", 8091))
     args = ap.parse_args()
     KEY = load_key()
-    print(f"botlan gateway on {args.host}:{args.port} -> jev {ORCH_URL}, vlm {VLM_URL}")
+    SCOPE_ENFORCED = sandbox_selftest()
+    print(f"botlan gateway on {args.host}:{args.port} -> jev {ORCH_URL}, vlm {VLM_URL}, "
+          f"zone scope enforced: {SCOPE_ENFORCED}", flush=True)
     ThreadingHTTPServer((args.host, args.port), Handler).serve_forever()
 
 
