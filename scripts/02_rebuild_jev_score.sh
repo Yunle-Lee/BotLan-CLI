@@ -11,6 +11,15 @@ VIEW=${VIEW:-$HOME/spark-duo/lc-cuda}
 
 [ -f "$CUDA_BUILD/bin/libllama.so" ] || { echo "no CUDA build at $CUDA_BUILD — run 01 first" >&2; exit 1; }
 
+# Jev model files: ModelScope mirror first (reachable from a Spark that cannot reach Hugging Face; it also
+# carries BotLan's prefix-reuse jev_style_decision_gguf.py), then Hugging Face.
+if [ ! -f "$JEVDIR/build_jev_score.sh" ]; then
+  mkdir -p "$JEVDIR"
+  if command -v modelscope >/dev/null && modelscope download --model "${JEV_MS:-Karoli/Jev-Style-0.8B-Decision-v3-GGUF}" --local_dir "$JEVDIR"; then :
+  elif command -v hf >/dev/null; then hf download chaoliangUNSW/Jev-Style-0.8B-Decision-v3-GGUF --local-dir "$JEVDIR"     --include "*Q4_K_M.gguf" "tokenizer/*" "*.json" "*.py" "*.cpp" "*.sh" "*.txt" LICENSE NOTICE
+  else echo "no Jev model at $JEVDIR and neither modelscope nor hf is installed" >&2; exit 1; fi
+fi
+
 # build_jev_score.sh hardcodes $LC/build/bin, so hand it a view where build/bin IS the CUDA build.
 mkdir -p "$VIEW/build"
 ln -sfn "$LC/include" "$VIEW/include"

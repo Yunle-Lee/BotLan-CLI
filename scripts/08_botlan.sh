@@ -26,8 +26,9 @@ case "${1:-}" in
   --stop) stop_gateway; exit 0 ;;
 esac
 
-# 1. the two models (idempotent: 04 skips whatever is already running)
-if ! curl -sf "http://127.0.0.1:${OPORT:-8090}/health" >/dev/null 2>&1; then
+# 1. the two models (idempotent: 04 skips whatever is already running). BOTLAN_NO_MODELS=1: Bots will use
+#    a model server you already run or an API (zones with an upstream), so skip the local stack.
+if [ "${BOTLAN_NO_MODELS:-}" != 1 ] && ! curl -sf "http://127.0.0.1:${OPORT:-8090}/health" >/dev/null 2>&1; then
   echo "spark duo: not up, starting it (scripts/04_serve.sh)"
   "$HERE/scripts/04_serve.sh"
 fi

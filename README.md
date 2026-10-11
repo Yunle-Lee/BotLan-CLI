@@ -9,7 +9,7 @@ unified memory: a 0.53 GB decision model decides what to do, a 4B vision-languag
 > stack: the `jevstep` CLI and the agent window talk to Jev + GELab-Zero-4B, both served locally
 > on the GB10. Installation, benchmark data and every measured table live below.
 >
-> **New Spark?** Start with [Install on a fresh DGX Spark](#install-on-a-fresh-dgx-spark-step-by-step).
+> **New Spark?** `curl -fsSL https://raw.githubusercontent.com/Yunle-Lee/BotLan-CLI/main/install.sh | sh` — see [One-command install](#one-command-install-recommended-10-minutes).
 >
 > **BotLan desktop panel → this Spark in one command:** `sh scripts/08_botlan.sh --install`, then
 > an SSH tunnel to `127.0.0.1:8091`. Jev picks the skill, the 4B runs it, and every command waits
@@ -33,11 +33,35 @@ request (state up to 25,600 tokens, optionally an image)
 <img width="1057" height="892" alt="image" src="https://github.com/user-attachments/assets/298b33d4-f08d-4dc4-a831-bdd4b19c78c7" />
 
 
+## One-command install (recommended, ~10 minutes)
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Yunle-Lee/BotLan-CLI/main/install.sh | sh
+```
+
+It walks you through it and asks before anything optional:
+
+1. checks the machine: aarch64, NVIDIA driver, CUDA 13 runtime, Python, ~12 GB free;
+2. clones this repository into `~/spark-duo`;
+3. gets the prebuilt runtime from ModelScope [`Karoli/BotLan-Runtime-DGX-Spark`](https://modelscope.cn/models/Karoli/BotLan-Runtime-DGX-Spark)
+   (llama.cpp CUDA sm_121 + jev-score, 76 MB, checksum-verified). No compiling. If the binaries cannot load on this
+   machine it falls back to building from source;
+4. asks **whether to install BotLan's models**: Jev-0.8B ([`Karoli/Jev-Style-0.8B-Decision-v3-GGUF`](https://modelscope.cn/models/Karoli/Jev-Style-0.8B-Decision-v3-GGUF))
+   and StepFun GELab-Zero-4B ([`Karoli/GELab-Zero-4B-preview-GGUF-DGX-Spark`](https://modelscope.cn/models/Karoli/GELab-Zero-4B-preview-GGUF-DGX-Spark)),
+   3.8 GB in total. Say no if your Bots will use a model server you already run, or an API;
+5. starts the stack and the BotLan gateway, then opens the setup wizard: name the first Bot, drag its activity
+   scope on a treemap, pick the model backend, set its memory/CPU budget.
+
+If a BotLan USB stick is plugged in, it installs from the stick instead and needs no network. Options:
+`--no-models`, `--from-source`, `--usb <path>`, `--yes`. Re-running it skips finished steps.
+
+Verified on a DGX Spark in an empty home directory: runtime and models downloaded from ModelScope, then GELab chat
+(76 tok/s), image input, a `run_spark_command` tool call and a Jev decision (positive 0.99) all worked.
+
 ## Install on a fresh DGX Spark (step by step)
 
 Tested on DGX OS (Ubuntu 24.04, aarch64) with CUDA 13.0 and an unprivileged user. Nothing below
-needs `sudo` except the optional last line. Expect about 45-70 minutes, mostly the CUDA build and
-the 8.9 GB model download.
+needs `sudo` except the optional last line. Expect about 30-50 minutes, mostly the CUDA build.
 
 ```sh
 # 0. tools (once): git, cmake, python3 are on DGX OS; add the two download CLIs
@@ -52,11 +76,12 @@ git clone https://github.com/ggml-org/llama.cpp ~/llama.cpp
 git -C ~/llama.cpp checkout 441df11f65ea0b6d0c72965aaf70c8241070ddcb
 sh scripts/01_build_llamacpp_cuda.sh
 
-# 3. Jev decision model (0.53 GB) and its scorer
-hf download chaoliangUNSW/Jev-Style-0.8B-Decision-v3-GGUF --local-dir ~/models/Jev-Style-0.8B-Decision-v3-GGUF
+# 3. Jev decision model (0.53 GB) and its scorer: script 02 downloads the model from the ModelScope
+#    mirror Karoli/Jev-Style-0.8B-Decision-v3-GGUF (falls back to Hugging Face), then builds jev-score
 sh scripts/02_rebuild_jev_score.sh
 
-# 4. StepFun GELab-Zero-4B: download 8.9 GB, convert, quantize to Q4_K_M + mmproj
+# 4. StepFun GELab-Zero-4B: prebuilt Q4_K_M + mmproj GGUF from ModelScope (3.3 GB, checksum-verified);
+#    falls back to download 8.9 GB + convert + quantize if that fails (GELAB_FROM_SOURCE=1 forces it)
 sh scripts/03_convert_gelab.sh
 
 # 5. serve both models (llama-server :8080 + orchestrator :8090), then the BotLan gateway (:8091)
@@ -258,7 +283,8 @@ the stack at local copies:
 | model | role | public home | download |
 |---|---|---|---|
 | Jev-Style-0.8B-Decision-v3-GGUF · Q4_K_M 0.53 GB | stage 1 gate + stage 3 NLI | [Hugging Face `chaoliangUNSW/Jev-Style-0.8B-Decision-v3-GGUF`](https://huggingface.co/chaoliangUNSW/Jev-Style-0.8B-Decision-v3-GGUF) | `hf download chaoliangUNSW/Jev-Style-0.8B-Decision-v3-GGUF --local-dir ~/models/Jev-Style-0.8B-Decision-v3-GGUF` |
-| GELab-Zero-4B-preview · 8.9 GB safetensors | stage 2 answers (vision-language) | [ModelScope `stepfun-ai/GELab-Zero-4B-preview`](https://modelscope.cn/models/stepfun-ai/GELab-Zero-4B-preview) · [HF mirror](https://huggingface.co/stepfun-ai/GELab-Zero-4B-preview) | `modelscope download --model stepfun-ai/GELab-Zero-4B-preview --local_dir ~/spark-duo/models/GELab-Zero-4B-preview` |
+| GELab-Zero-4B-preview · GGUF Q4_K_M 2.5 GB + mmproj f16 0.8 GB (prebuilt) | stage 2 answers (vision-language) | [ModelScope `Karoli/GELab-Zero-4B-preview-GGUF-DGX-Spark`](https://modelscope.cn/models/Karoli/GELab-Zero-4B-preview-GGUF-DGX-Spark) — unofficial conversion, the exact files benchmarked here | used by `scripts/03` automatically |
+| GELab-Zero-4B-preview · 8.9 GB safetensors (source) | only to convert yourself | [ModelScope `stepfun-ai/GELab-Zero-4B-preview`](https://modelscope.cn/models/stepfun-ai/GELab-Zero-4B-preview) · [HF mirror](https://huggingface.co/stepfun-ai/GELab-Zero-4B-preview) | `modelscope download --model stepfun-ai/GELab-Zero-4B-preview --local_dir ~/spark-duo/models/GELab-Zero-4B-preview` |
 
 `config.json` expects the Jev directory at `~/models/Jev-Style-0.8B-Decision-v3-GGUF` and the
 converted GELab files under `~/spark-duo/models/` — edit those paths if you keep the weights

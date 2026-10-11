@@ -6,7 +6,7 @@
 
 > **DGX Spark 上的 BotLan CLI。** BotLan 的前端（本仓库）驱动的正是这套栈：`jevstep` CLI 和 agent 窗口与 Jev + GELab-Zero-4B 对话，二者都本地运行在 GB10 上。安装方式、基准数据和全部实测表格都在下文。
 >
-> **新的 Spark？** 先看 [在一台全新的 DGX Spark 上安装](#在一台全新的-dgx-spark-上安装逐步)。
+> **新的 Spark？** `curl -fsSL https://raw.githubusercontent.com/Yunle-Lee/BotLan-CLI/main/install.sh | sh`，见 [一条命令安装](#一条命令安装推荐约-10-分钟)。
 >
 > **BotLan 桌面面板一条命令接入这台 Spark：** `sh scripts/08_botlan.sh --install`，再建一条到 `127.0.0.1:8091` 的 SSH 隧道。Jev 选技能，4B 照技能执行，每条命令都要你在面板里批准。见 [BotLan 网关](#botlan-网关botlan_gatewaypy1270018091)。
 
@@ -28,9 +28,27 @@ request（state 最长 25,600 tokens，可选带一张图片）
 <img width="1057" height="892" alt="image" src="https://github.com/user-attachments/assets/5ebb87bc-d62f-4ce5-944b-c536537883f9" />
 
 
+## 一条命令安装（推荐，约 10 分钟）
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Yunle-Lee/BotLan-CLI/main/install.sh | sh
+```
+
+它会一步步引导，遇到可选项会先问你：
+
+1. 检查机器：aarch64、NVIDIA 驱动、CUDA 13 运行库、Python、约 12 GB 空闲空间；
+2. 把本仓库克隆到 `~/spark-duo`；
+3. 从 ModelScope [`Karoli/BotLan-Runtime-DGX-Spark`](https://modelscope.cn/models/Karoli/BotLan-Runtime-DGX-Spark) 下载编译好的运行程序（llama.cpp CUDA sm_121 + jev-score，76 MB，自动校验），不用编译。这台机器上程序跑不起来时，自动改为从源码编译；
+4. 问你**要不要装 BotLan 自带的模型**：Jev-0.8B（[`Karoli/Jev-Style-0.8B-Decision-v3-GGUF`](https://modelscope.cn/models/Karoli/Jev-Style-0.8B-Decision-v3-GGUF)）和 StepFun GELab-Zero-4B（[`Karoli/GELab-Zero-4B-preview-GGUF-DGX-Spark`](https://modelscope.cn/models/Karoli/GELab-Zero-4B-preview-GGUF-DGX-Spark)），共 3.8 GB。如果你的 Bot 要用你自己已经在跑的模型服务或外部 API，就选不装；
+5. 启动模型和 BotLan 网关，然后打开配置向导：给第一个 Bot 起名、在方块图上拉框选活动范围、选模型后端、分配内存和 CPU。
+
+插着 BotLan U 盘时，会改为从 U 盘安装，不需要网络。选项：`--no-models`、`--from-source`、`--usb <路径>`、`--yes`。重复运行会跳过已完成的步骤。
+
+已在 DGX Spark 上用一个空的 home 目录实测：运行程序和模型都从 ModelScope 下载，之后 GELab 对话（76 tok/s）、看图、`run_spark_command` 工具调用、Jev 判定（positive 0.99）全部正常。
+
 ## 在一台全新的 DGX Spark 上安装（逐步）
 
-在 DGX OS（Ubuntu 24.04，aarch64）、CUDA 13.0、普通用户下实测。除最后一行可选命令外都不需要 `sudo`。全程约 45–70 分钟，主要花在 CUDA 编译和 8.9 GB 模型下载上。
+在 DGX OS（Ubuntu 24.04，aarch64）、CUDA 13.0、普通用户下实测。除最后一行可选命令外都不需要 `sudo`。全程约 30–50 分钟，主要花在 CUDA 编译上。
 
 ```sh
 # 0. 工具（一次）：DGX OS 自带 git、cmake、python3，再装两个下载工具
@@ -45,11 +63,12 @@ git clone https://github.com/ggml-org/llama.cpp ~/llama.cpp
 git -C ~/llama.cpp checkout 441df11f65ea0b6d0c72965aaf70c8241070ddcb
 sh scripts/01_build_llamacpp_cuda.sh
 
-# 3. Jev 决策模型（0.53 GB）及其打分器
-hf download chaoliangUNSW/Jev-Style-0.8B-Decision-v3-GGUF --local-dir ~/models/Jev-Style-0.8B-Decision-v3-GGUF
+# 3. Jev 决策模型（0.53 GB）及其打分器：脚本 02 会从 ModelScope 镜像 Karoli/Jev-Style-0.8B-Decision-v3-GGUF
+#    下载模型（失败时改用 Hugging Face），再编译 jev-score
 sh scripts/02_rebuild_jev_score.sh
 
-# 4. StepFun GELab-Zero-4B：下载 8.9 GB，转换并量化为 Q4_K_M + mmproj
+# 4. StepFun GELab-Zero-4B：从 ModelScope 下载现成的 Q4_K_M + mmproj GGUF（3.3 GB，自动校验）；
+#    失败时自动改为下载 8.9 GB 原版再转换、量化（GELAB_FROM_SOURCE=1 可强制走这条路）
 sh scripts/03_convert_gelab.sh
 
 # 5. 启动两个模型（llama-server :8080 + orchestrator :8090），再启动 BotLan 网关（:8091）
@@ -229,7 +248,8 @@ benchmarks/                  实测数据：单流与并发（REPORT.md、raw.js
 | 模型 | 角色 | 公开主页 | 下载 |
 |---|---|---|---|
 | Jev-Style-0.8B-Decision-v3-GGUF · Q4_K_M 0.53 GB | stage 1 门控 + stage 3 NLI | [Hugging Face `chaoliangUNSW/Jev-Style-0.8B-Decision-v3-GGUF`](https://huggingface.co/chaoliangUNSW/Jev-Style-0.8B-Decision-v3-GGUF) | `hf download chaoliangUNSW/Jev-Style-0.8B-Decision-v3-GGUF --local-dir ~/models/Jev-Style-0.8B-Decision-v3-GGUF` |
-| GELab-Zero-4B-preview · 8.9 GB safetensors | stage 2 回答（视觉语言） | [ModelScope `stepfun-ai/GELab-Zero-4B-preview`](https://modelscope.cn/models/stepfun-ai/GELab-Zero-4B-preview) · [HF 镜像](https://huggingface.co/stepfun-ai/GELab-Zero-4B-preview) | `modelscope download --model stepfun-ai/GELab-Zero-4B-preview --local_dir ~/spark-duo/models/GELab-Zero-4B-preview` |
+| GELab-Zero-4B-preview · GGUF Q4_K_M 2.5 GB + mmproj f16 0.8 GB（现成） | stage 2 回答（视觉语言） | [ModelScope `Karoli/GELab-Zero-4B-preview-GGUF-DGX-Spark`](https://modelscope.cn/models/Karoli/GELab-Zero-4B-preview-GGUF-DGX-Spark)，非官方转换，就是本项目实测用的那份 | `scripts/03` 自动使用 |
+| GELab-Zero-4B-preview · 8.9 GB safetensors（原版） | 只在自己转换时需要 | [ModelScope `stepfun-ai/GELab-Zero-4B-preview`](https://modelscope.cn/models/stepfun-ai/GELab-Zero-4B-preview) · [HF 镜像](https://huggingface.co/stepfun-ai/GELab-Zero-4B-preview) | `modelscope download --model stepfun-ai/GELab-Zero-4B-preview --local_dir ~/spark-duo/models/GELab-Zero-4B-preview` |
 
 `config.json` 期望 Jev 目录在 `~/models/Jev-Style-0.8B-Decision-v3-GGUF`，转换后的 GELab 文件在 `~/spark-duo/models/` 下 —— 如果你把权重放在别处，请修改这些路径。Jev 目录必须包含 `tokenizer/`、`readout_config.json`、`jev_score.cpp` 和 `.gguf`；`scripts/02` 会从 `.cpp` 出发、对着你的 CUDA llama.cpp 构建 `bin/jev-score`。
 
