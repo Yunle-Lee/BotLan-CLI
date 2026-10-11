@@ -9,7 +9,7 @@ unified memory: a 0.53 GB decision model decides what to do, a 4B vision-languag
 > stack: the `jevstep` CLI and the agent window talk to Jev + GELab-Zero-4B, both served locally
 > on the GB10. Installation, benchmark data and every measured table live below.
 >
-> **New Spark?** `curl -fsSL https://raw.githubusercontent.com/Yunle-Lee/BotLan-CLI/main/install.sh | sh` — see [One-command install](#one-command-install-recommended-10-minutes).
+> **New Spark?** `curl -fsSL https://modelscope.cn/models/Karoli/BotLan-CLI/resolve/master/install.sh | sh` — see [One-command install](#one-command-install-recommended-10-minutes).
 >
 > **BotLan desktop panel → this Spark in one command:** `sh scripts/08_botlan.sh --install`, then
 > an SSH tunnel to `127.0.0.1:8091`. Jev picks the skill, the 4B runs it, and every command waits
@@ -36,8 +36,10 @@ request (state up to 25,600 tokens, optionally an image)
 ## One-command install (recommended, ~10 minutes)
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Yunle-Lee/BotLan-CLI/main/install.sh | sh
+curl -fsSL https://modelscope.cn/models/Karoli/BotLan-CLI/resolve/master/install.sh | sh
 ```
+
+The same script is on GitHub: `curl -fsSL https://raw.githubusercontent.com/Yunle-Lee/BotLan-CLI/main/install.sh | sh`. Everything it downloads (code, runtime, models) comes from ModelScope over plain HTTPS with sha256 checks; GitHub is only a fallback for the code. It needs only `curl` or `wget`, no git, pip or modelscope CLI.
 
 It walks you through it and asks before anything optional:
 

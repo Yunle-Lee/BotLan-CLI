@@ -6,7 +6,7 @@
 
 > **DGX Spark 上的 BotLan CLI。** BotLan 的前端（本仓库）驱动的正是这套栈：`jevstep` CLI 和 agent 窗口与 Jev + GELab-Zero-4B 对话，二者都本地运行在 GB10 上。安装方式、基准数据和全部实测表格都在下文。
 >
-> **新的 Spark？** `curl -fsSL https://raw.githubusercontent.com/Yunle-Lee/BotLan-CLI/main/install.sh | sh`，见 [一条命令安装](#一条命令安装推荐约-10-分钟)。
+> **新的 Spark？** `curl -fsSL https://modelscope.cn/models/Karoli/BotLan-CLI/resolve/master/install.sh | sh`，见 [一条命令安装](#一条命令安装推荐约-10-分钟)。
 >
 > **BotLan 桌面面板一条命令接入这台 Spark：** `sh scripts/08_botlan.sh --install`，再建一条到 `127.0.0.1:8091` 的 SSH 隧道。Jev 选技能，4B 照技能执行，每条命令都要你在面板里批准。见 [BotLan 网关](#botlan-网关botlan_gatewaypy1270018091)。
 
@@ -31,8 +31,10 @@ request（state 最长 25,600 tokens，可选带一张图片）
 ## 一条命令安装（推荐，约 10 分钟）
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Yunle-Lee/BotLan-CLI/main/install.sh | sh
+curl -fsSL https://modelscope.cn/models/Karoli/BotLan-CLI/resolve/master/install.sh | sh
 ```
+
+GitHub 上是同一个脚本：`curl -fsSL https://raw.githubusercontent.com/Yunle-Lee/BotLan-CLI/main/install.sh | sh`。它下载的所有东西（代码、运行程序、模型）都从 ModelScope 通过普通 HTTPS 获取并校验 sha256，GitHub 只是代码的备用来源。只需要 `curl` 或 `wget`，不需要 git、pip 或 modelscope 命令行工具。
 
 它会一步步引导，遇到可选项会先问你：
 
