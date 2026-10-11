@@ -76,6 +76,7 @@ MODEL_ID = GW.get("model", "jev-step")
 THRESHOLD = float(GW.get("route_threshold", 0.5))
 MAX_SKILLS = int(GW.get("max_skills", 15))      # jev-score holds 17 sequences; leave room for "none"
 TIMEOUT = float(CONFIG["vlm"].get("timeout_s", 180))
+SAMPLING = dict(CONFIG["vlm"].get("sampling") or {})
 MAX_BODY = 8 * 1024 * 1024
 ALLOW_EXEC = bool(GW.get("allow_exec", False))
 EXEC_ROOT = Path(GW.get("exec_root", "~")).expanduser()
@@ -347,6 +348,78 @@ def jev_route(question: str, skills: dict[str, str]) -> dict:
         raise RuntimeError(res["error"])
     return {"skill": res["verdict"], "confidence": round(float(res["confidence"]), 3),
             "ms": res.get("ms"), "calibrated": res.get("calibrated", False)}
+
+
+ACT_OPTIONS = {
+    "act": "the person wants something checked, run, installed, started, fixed, inspected or explored on this machine",
+    "chat": "a question, explanation, opinion or conversation that needs no command on this machine",
+}
+ACT_THRESHOLD = float(GW.get("act_threshold", 0.8))
+
+
+def jev_intent(question: str) -> dict:
+    """Jev decides act vs chat (~25 ms). A small model asked to "look at the dev environment" often
+    answers with a list of commands instead of calling the tool, and once a thread has a few such
+    replies it keeps copying them. When Jev is sure the person wants action, the gateway forces the
+    first step to be a tool call (tool_choice=required) instead of hoping the prompt is followed."""
+    body = json.dumps({"state": f"User request: {question}",
+                       "question": "Does this request need a command run on this machine?",
+                       "category": CONFIG["gate"]["category"], "qtype": "choice",
+                       "options": ACT_OPTIONS}).encode()
+    req = urllib.request.Request(ORCH_URL + "/decide", data=body, headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=30) as r:
+        res = json.loads(r.read())
+    if res.get("error"):
+        raise RuntimeError(res["error"])
+    return {"intent": res["verdict"], "confidence": round(float(res["confidence"]), 3), "ms": res.get("ms")}
+
+
+def wants_tool_now(req: dict, messages) -> bool:
+    """Force a tool call only on a fresh user turn that offers run_spark_command, and only when the
+    client did not choose tool_choice itself."""
+    if "tool_choice" in req or not messages or messages[-1].get("role") != "user":
+        return False
+    return any(t.get("function", {}).get("name") == "run_spark_command" for t in req.get("tools") or [])
+
+
+ACT_NUDGE = ("[BotLan] Do not ask questions and do not list commands. Call run_spark_command now with the "
+             "single best first command for this request (for example a read-only check). The person "
+             "approves it before it runs.")
+
+
+def with_user_nudge(messages, text: str):
+    out = [dict(m) for m in messages]
+    last = out[-1]
+    c = last.get("content")
+    last["content"] = (f"{c}\n\n{text}" if isinstance(c, str)
+                       else [*(c or []), {"type": "text", "text": text}])
+    return out
+
+
+def has_tool_call(data: dict) -> bool:
+    try:
+        return bool(data["choices"][0]["message"].get("tool_calls"))
+    except (KeyError, IndexError, TypeError):
+        return False
+
+
+def sse_from(data: dict) -> bytes:
+    """Re-emit a finished (non-streamed) completion as one OpenAI SSE stream for a streaming client."""
+    msg = data["choices"][0]["message"]
+    base = {"id": data.get("id", "botlan"), "object": "chat.completion.chunk",
+            "created": data.get("created", int(time.time())), "model": data.get("model", MODEL_ID)}
+    delta: dict = {"role": "assistant"}
+    if msg.get("content"):
+        delta["content"] = msg["content"]
+    if msg.get("tool_calls"):
+        delta["tool_calls"] = [{**tc, "index": i} for i, tc in enumerate(msg["tool_calls"])]
+    chunks = [{**base, "choices": [{"index": 0, "delta": delta, "finish_reason": None}]},
+              {**base, "choices": [{"index": 0, "delta": {},
+                                    "finish_reason": data["choices"][0].get("finish_reason") or "stop"}]}]
+    if data.get("usage"):
+        chunks.append({**base, "choices": [], "usage": data["usage"],
+                       **({"timings": data["timings"]} if data.get("timings") else {})})
+    return b"".join(f"data: {json.dumps(c, ensure_ascii=False)}\n\n".encode() for c in chunks) + b"data: [DONE]\n\n"
 
 
 def hint(route: dict) -> str:
@@ -649,8 +722,30 @@ class Handler(BaseHTTPRequestHandler):
         if self.zone:
             messages = with_hint(messages, zone_note(self.zone))
 
+        force_tool = False
+        if question and wants_tool_now(req, messages):
+            try:
+                intent = jev_intent(question)
+                force_tool = intent["intent"] == "act" and intent["confidence"] >= ACT_THRESHOLD
+                route = {**(route or {}), "intent": intent["intent"], "intent_p": intent["confidence"],
+                         "intent_ms": intent["ms"], "forced_tool": force_tool}
+                if ROUTES and ROUTES[-1].get("question") == question[:200]:
+                    ROUTES[-1].update(intent=intent["intent"], intent_p=intent["confidence"], forced_tool=force_tool)
+                print(f"  jev intent: {intent} forced_tool={force_tool}", flush=True)
+            except Exception as exc:            # advice only: a failed check never blocks the turn
+                print(f"  jev intent failed: {type(exc).__name__}: {exc}", flush=True)
+
         target = (self.zone or {}).get("upstream")
         upstream = {**req, "messages": messages}
+        if force_tool:
+            # This llama-server ignores tool_choice=required and refuses grammar with tools, so the
+            # nudge goes into the user turn itself; measured 19/20 tool calls with one retry vs ~1/4.
+            upstream["messages"] = with_user_nudge(upstream["messages"], ACT_NUDGE)
+        if not target:
+            # llama-server has no repetition penalty by default; without it the 4B copies its own
+            # earlier replies (config.json vlm.sampling). The client's own values win.
+            for k, v in SAMPLING.items():
+                upstream.setdefault(k, v)
         headers = {"Content-Type": "application/json"}
         if target:           # this zone's own engine or API: its model name, its key
             upstream["model"] = target["model"]
@@ -660,9 +755,46 @@ class Handler(BaseHTTPRequestHandler):
         else:
             upstream.pop("model", None)      # llama-server serves one model; keep the panel's name out
             url = VLM_URL + "/v1/chat/completions"
+        route_header = {"X-Jev-Route": json.dumps(route, ensure_ascii=True)} if route else {}
+        if force_tool:
+            # Buffer this one turn so a text-only reply can be retried before the client sees it.
+            data = None
+            for attempt, temp in enumerate((upstream.get("temperature", 0.4), 0.7, 1.0)):
+                try_body = {**upstream, "stream": False, "temperature": temp}
+                try_body.pop("stream_options", None)
+                try:
+                    with urllib.request.urlopen(urllib.request.Request(url, data=json.dumps(try_body).encode(),
+                                                                       headers=headers), timeout=TIMEOUT) as r:
+                        data = json.loads(r.read())
+                except (urllib.error.URLError, OSError, ValueError) as exc:
+                    self._send({"error": {"message": f"model server: {exc}"}}, 502)
+                    return
+                if has_tool_call(data):
+                    break
+                print(f"  forced turn answered in text (attempt {attempt + 1})", flush=True)
+            route["forced_ok"] = has_tool_call(data)
+            data["model"] = zone_model(self.zone) if self.zone else MODEL_ID
+            if not req.get("stream"):
+                data["jev_route"] = route
+                self._send(data, headers={"X-Jev-Route": json.dumps(route, ensure_ascii=True)})
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("Connection", "close")
+            self.send_header("X-Jev-Route", json.dumps(route, ensure_ascii=True))
+            self.end_headers()
+            self.close_connection = True
+            try:
+                self.wfile.write(f": jev-route {json.dumps(route, ensure_ascii=False)}\n\n".encode())
+                self.wfile.write(sse_from(data))
+                self.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            return
+
         body = json.dumps(upstream).encode()
         up = urllib.request.Request(url, data=body, headers=headers)
-        route_header = {"X-Jev-Route": json.dumps(route, ensure_ascii=True)} if route else {}
         try:
             resp = urllib.request.urlopen(up, timeout=TIMEOUT)
         except urllib.error.HTTPError as exc:
