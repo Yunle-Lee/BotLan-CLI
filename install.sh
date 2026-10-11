@@ -1,12 +1,14 @@
 #!/bin/sh
 # BotLan one-command install for an NVIDIA DGX Spark.
 #
-#   curl -fsSL https://raw.githubusercontent.com/Yunle-Lee/BotLan-CLI/main/install.sh | sh
+#   curl -fsSL https://modelscope.cn/models/Karoli/BotLan-CLI/resolve/master/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/Yunle-Lee/BotLan-CLI/main/install.sh | sh   (same script)
 #   sh install.sh [--usb <BotLan folder>] [--no-models] [--from-source] [--yes]
 #
 # What it does, in order (re-running it skips whatever is already done):
 #   1. checks the machine (aarch64, NVIDIA GPU, CUDA 13 runtime, Python 3, disk)
-#   2. gets the code (git clone of BotLan-CLI into ~/spark-duo)
+#   2. gets the code into ~/spark-duo: ModelScope (Karoli/BotLan-CLI) first, GitHub second. Only curl or
+#      wget is needed (no git, pip or modelscope CLI), so it works when one of the two sites is blocked
 #   3. gets the binaries: a BotLan USB stick if one is plugged in, else the prebuilt runtime from ModelScope
 #      (Karoli/BotLan-Runtime-DGX-Spark), else builds llama.cpp from source (20-40 min)
 #   4. asks whether to install BotLan's own models (Jev + StepFun GELab-Zero-4B, ~3.8 GB from ModelScope);
@@ -14,7 +16,8 @@
 #   5. starts the stack and the BotLan gateway, then opens the setup wizard (first Bot, scope, model, budget)
 set -eu
 
-REPO_URL=${BOTLAN_REPO:-https://github.com/Yunle-Lee/BotLan-CLI}
+MS=${BOTLAN_MODELSCOPE:-https://modelscope.cn/models}
+GH=${BOTLAN_GITHUB:-https://github.com/Yunle-Lee/BotLan-CLI}
 DIR=${BOTLAN_DIR:-$HOME/spark-duo}
 RUNTIME_MS=${BOTLAN_RUNTIME_MS:-Karoli/BotLan-Runtime-DGX-Spark}
 RUNTIME_FILE=botlan-runtime-aarch64-cuda13.tar.gz
@@ -49,7 +52,7 @@ say "1/5 checking this machine"
 [ "$(uname -m)" = aarch64 ] || FROM_SOURCE=1
 command -v nvidia-smi >/dev/null && nvidia-smi -L || die "no NVIDIA driver (nvidia-smi missing)"
 command -v python3 >/dev/null || die "python3 missing"
-command -v git >/dev/null || die "git missing"
+command -v curl >/dev/null || command -v wget >/dev/null || die "need curl or wget"
 CUDALIB=""
 for d in ${CUDA_HOME:+$CUDA_HOME/targets/*/lib $CUDA_HOME/lib64} /usr/local/cuda/targets/*/lib /usr/local/cuda-13*/targets/*/lib /usr/local/cuda*/targets/*/lib /usr/local/cuda*/lib64; do
   [ -f "$d/libcudart.so.13" ] && [ -f "$d/libcublas.so.13" ] && { CUDALIB=$d; break; }
@@ -59,7 +62,16 @@ if [ -z "$CUDALIB" ]; then warn "no CUDA 13 runtime found; building from source 
 echo "CUDA runtime: ${CUDALIB:-none}   python: $(python3 -V 2>&1)"
 FREE_GB=$(df -Pk "$HOME" | awk 'NR==2{print int($4/1048576)}')
 [ "$FREE_GB" -ge 12 ] || die "need ~12 GB free in $HOME, have ${FREE_GB} GB"
-python3 -m pip --version >/dev/null 2>&1 || die "pip missing for python3 (DGX OS: it is preinstalled)"
+
+# fetch <url> <file>: resumable, retried, follows redirects; curl or wget, whichever exists.
+fetch() {
+  if command -v curl >/dev/null; then curl -fL --retry 5 --retry-delay 3 -C - --progress-bar -o "$2" "$1"
+  else wget -c -t 5 -q --show-progress -O "$2" "$1"; fi
+}
+# ms_get <repo> <file> <dest-dir>: one file from a public ModelScope repo, anonymous.
+ms_get() { mkdir -p "$3"; fetch "$MS/$1/resolve/master/$2" "$3/$(basename "$2")"; }
+# pip with or without --break-system-packages (Ubuntu 24.04 needs it for --user installs).
+pipi() { python3 -m pip install -q --user "$@" 2>/dev/null || python3 -m pip install -q --user --break-system-packages "$@"; }
 
 # A plugged-in BotLan stick wins: no network needed.
 if [ -z "$USB" ]; then
@@ -73,7 +85,14 @@ say "2/5 code → $DIR"
 if [ -d "$DIR/.git" ]; then git -C "$DIR" pull -q --ff-only || warn "could not update $DIR (local changes?); using it as is"
 elif [ -f "$DIR/botlan_gateway.py" ]; then echo "using existing $DIR"
 elif [ -n "$USB" ] && [ -f "$USB/BotLan-CLI-src.tar" ]; then tar -C "$(dirname "$DIR")" -xf "$USB/BotLan-CLI-src.tar" && mv "$(dirname "$DIR")/BotLan-CLI" "$DIR"
-else git clone -q --depth 1 "$REPO_URL" "$DIR"; fi
+else
+  T=$HOME/.cache/botlan; mkdir -p "$T"; rm -f "$T/BotLan-CLI-src.tar.gz"
+  ms_get Karoli/BotLan-CLI BotLan-CLI-src.tar.gz "$T" \
+    || fetch "$GH/archive/refs/heads/main.tar.gz" "$T/BotLan-CLI-src.tar.gz" \
+    || die "could not download BotLan-CLI from ModelScope or GitHub (network?)"
+  rm -rf "$T/src" && mkdir -p "$T/src" && tar -C "$T/src" -xzf "$T/BotLan-CLI-src.tar.gz"
+  mv "$T/src/$(ls "$T/src" | head -1)" "$DIR"
+fi
 cd "$DIR"
 
 if [ -n "$USB" ]; then
@@ -82,14 +101,13 @@ if [ -n "$USB" ]; then
 fi
 
 say "3/5 binaries"
-python3 -m pip install -q --user modelscope 2>/dev/null || python3 -m pip install -q --user --break-system-packages modelscope \
-  || warn "could not install the modelscope CLI"
 PATH=$HOME/.local/bin:$PATH
 if [ -x "$LCBIN/llama-server" ] && [ -x bin/jev-score ] && [ -L lc-cuda/build/bin ]; then
   echo "already installed"
-elif [ "$FROM_SOURCE" = 0 ] && command -v modelscope >/dev/null; then
+elif [ "$FROM_SOURCE" = 0 ]; then
   T=$HOME/.cache/botlan; mkdir -p "$T"
-  modelscope download --model "$RUNTIME_MS" "$RUNTIME_FILE" --local_dir "$T"
+  echo "$RUNTIME_SHA  $T/$RUNTIME_FILE" | sha256sum -c - >/dev/null 2>&1 \
+    || ms_get "$RUNTIME_MS" "$RUNTIME_FILE" "$T" || die "could not download the runtime from ModelScope"
   echo "$RUNTIME_SHA  $T/$RUNTIME_FILE" | sha256sum -c - || die "runtime download is damaged (checksum)"
   tar -C "$T" -xzf "$T/$RUNTIME_FILE"
   (cd "$T/botlan-offline" && sha256sum -c --quiet SHA256SUMS) || die "runtime bundle failed its checksums"
@@ -103,8 +121,8 @@ elif [ "$FROM_SOURCE" = 0 ] && command -v modelscope >/dev/null; then
   if ldd "$LCBIN/llama-server" bin/jev-score | grep -q 'not found'; then
     warn "prebuilt binaries cannot load here; building from source instead"; FROM_SOURCE=1
   else "$LCBIN/llama-server" --version 2>&1 | tail -1; fi
-  python3 -c 'import tokenizers, numpy' 2>/dev/null || python3 -m pip install -q --user --no-index --find-links "$T/botlan-offline/wheels" tokenizers numpy \
-    || python3 -m pip install -q --user --break-system-packages --no-index --find-links "$T/botlan-offline/wheels" tokenizers numpy
+  python3 -c 'import tokenizers, numpy' 2>/dev/null || pipi --no-index --find-links "$T/botlan-offline/wheels" tokenizers numpy \
+    || die "could not install tokenizers/numpy (bundled wheels are for Python 3.12)"
   python3 -m venv .venv 2>/dev/null && .venv/bin/pip install -q --no-index --find-links "$T/botlan-offline/wheels" textual || true
 else
   FROM_SOURCE=1
@@ -114,7 +132,7 @@ if [ "$FROM_SOURCE" = 1 ] && ! [ -x "$LCBIN/llama-server" ]; then
   [ -d "$HOME/llama.cpp/.git" ] || git clone -q https://github.com/ggml-org/llama.cpp "$HOME/llama.cpp"
   git -C "$HOME/llama.cpp" checkout -q 441df11f65ea0b6d0c72965aaf70c8241070ddcb
   sh scripts/01_build_llamacpp_cuda.sh
-  python3 -m pip install -q --user tokenizers numpy 2>/dev/null || python3 -m pip install -q --user --break-system-packages tokenizers numpy
+  pipi tokenizers numpy
 fi
 
 say "4/5 models"
@@ -124,12 +142,26 @@ if [ "$MODELS" = ask ]; then
   case "$(ask 'Install BotLan models? (Y/n)' Y)" in n|N|no|No) MODELS=no ;; *) MODELS=yes ;; esac
 fi
 if [ "$MODELS" = yes ]; then
+  # Plain HTTPS from ModelScope, checksummed: no modelscope CLI, no Hugging Face.
   JEV=$HOME/models/Jev-Style-0.8B-Decision-v3-GGUF
-  [ -f "$JEV/Jev-Style-0.8B-Decision-v3-Q4_K_M.gguf" ] \
-    || modelscope download --model Karoli/Jev-Style-0.8B-Decision-v3-GGUF --local_dir "$JEV"
+  JEV_SHA=0a19bc29bacc33e0d871146c8612b24dd14c2ed2e61cedeb7a928b0852628bac
+  for f in build_jev_score.sh jev_score.cpp jev_style_decision_gguf.py LICENSE NOTICE manifest.json \
+           readout_config.json release_config.json requirements.txt tokenizer/tokenizer.json tokenizer/tokenizer_config.json; do
+    [ -s "$JEV/$f" ] || ms_get Karoli/Jev-Style-0.8B-Decision-v3-GGUF "$f" "$JEV/$(dirname "$f")" || die "Jev download failed: $f"
+  done
+  echo "$JEV_SHA  $JEV/Jev-Style-0.8B-Decision-v3-Q4_K_M.gguf" | sha256sum -c - >/dev/null 2>&1 \
+    || ms_get Karoli/Jev-Style-0.8B-Decision-v3-GGUF Jev-Style-0.8B-Decision-v3-Q4_K_M.gguf "$JEV" || die "Jev download failed"
+  echo "$JEV_SHA  $JEV/Jev-Style-0.8B-Decision-v3-Q4_K_M.gguf" | sha256sum -c - || die "Jev model is damaged (checksum)"
   # The prebuilt runtime already ships jev-score; only a source build needs to compile it.
   [ -x bin/jev-score ] || sh scripts/02_rebuild_jev_score.sh "$HOME/llama.cpp" || die "Jev scorer build failed"
-  sh scripts/03_convert_gelab.sh "$HOME/llama.cpp"
+  G=$DIR/models; mkdir -p "$G"
+  for pair in "gelab-zero-4b-Q4_K_M.gguf 6b53cf5bc60b022056940ccc11fff666b7817123dece551faaa5c004f947527f" \
+              "gelab-zero-4b-mmproj-f16.gguf 7e2178f93462021c0b9f2b39f6abeafd747f8b35c318bd6f087972f33abb7274"; do
+    set -- $pair
+    echo "$2  $G/$1" | sha256sum -c - >/dev/null 2>&1 || ms_get Karoli/GELab-Zero-4B-preview-GGUF-DGX-Spark "$1" "$G" \
+      || die "GELab download failed: $1"
+    echo "$2  $G/$1" | sha256sum -c - || die "GELab file is damaged (checksum): $1"
+  done
 fi
 
 say "5/5 starting"
